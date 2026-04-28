@@ -8,6 +8,16 @@
     "ios": "expo run:ios",
     "web": "expo start --web"
   },
+  "jest": {
+    "preset": "jest-expo",
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "\\.worktrees/"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|lucide-react-native|@react-native-ml-kit|@react-native-voice|react-native-reanimated|react-native-gesture-handler|react-native-qrcode-svg)/)"
+    ]
+  },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-ml-kit/text-recognition": "^2.0.0",
@@ -33,6 +43,8 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@babel/preset-env": "^7.29.2",
+    "@babel/preset-typescript": "^7.28.5",
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.1.0",
