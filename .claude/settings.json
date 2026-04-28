@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx jest *)",
+      "Bash(git commit *)",
+      "mcp__plugin_claude-mem_mcp-search__smart_outline"
+    ]
+  }
+}

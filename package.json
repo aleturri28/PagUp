@@ -2,16 +2,6 @@
   "name": "pagup",
   "version": "1.0.0",
   "main": "index.ts",
-  "jest": {
-    "preset": "jest-expo",
-    "testPathIgnorePatterns": [
-      "/node_modules/",
-      "\\.worktrees/"
-    ],
-    "transformIgnorePatterns": [
-      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|lucide-react-native|@react-native-ml-kit|@react-native-voice|react-native-reanimated|react-native-gesture-handler|react-native-qrcode-svg)/)"
-    ]
-  },
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
