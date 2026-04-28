@@ -9,7 +9,7 @@
       "\\.worktrees/"
     ],
     "transformIgnorePatterns": [
-      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|lucide-react-native|@react-native-ml-kit|@react-native-voice|react-native-reanimated|react-native-gesture-handler)/)"
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|lucide-react-native|@react-native-ml-kit|@react-native-voice|react-native-reanimated|react-native-gesture-handler|react-native-qrcode-svg)/)"
     ]
   },
   "scripts": {
@@ -46,7 +46,7 @@
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.1.0",
-    "jest": "^30.3.0",
+    "jest": "^29.7.0",
     "jest-expo": "~54.0.17",
     "typescript": "~5.9.2"
   },
