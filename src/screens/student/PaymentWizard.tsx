@@ -29,13 +29,15 @@ import Animated, {
 } from 'react-native-reanimated';
 import { CameraView } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, AlertCircle, CheckCircle, RefreshCcw, Camera, Mic, X } from 'lucide-react-native';
+import { ArrowLeft, AlertCircle, CheckCircle, RefreshCcw, Camera, Mic, X, LifeBuoy } from 'lucide-react-native';
 import { useWalletStore } from '../../store/useWalletStore';
 import { MoneyVisualizer } from '../../components/money/MoneyVisualizer';
 import { formatEuro, calculateOptimalPayment } from '../../utils/paymentLogic';
 import { MoneyItem } from '../../api/database.types';
 import { useOCRScanner } from '../../hooks/useOCRScanner';
 import { useVoiceInput } from '../../hooks/useVoiceInput';
+import { supabase } from '../../api/supabase';
+import { sendSos } from '../../api/payments';
 
 // ============================================================
 // TIPI E COSTANTI
@@ -593,11 +595,12 @@ function StepAmount({ amount, onAmountChange, onConfirm }: StepAmountProps) {
       entering={SlideInRight.duration(280)}
       exiting={SlideOutLeft.duration(280)}
     >
-      <Animated.View
-        style={[styles.amountDisplay, amountCardStyle]}
-        accessible
-        accessibilityLabel={`Importo: ${displayValue} euro`}
-      >
+      <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+        <Animated.View
+          style={[styles.amountDisplay, amountCardStyle]}
+          accessible
+          accessibilityLabel={`Importo: ${displayValue} euro`}
+        >
         <Text style={styles.amountEyebrow}>Step A</Text>
         <Text style={styles.amountLabel}>Quanto devi pagare?</Text>
         <Text style={styles.amountValue} numberOfLines={1} adjustsFontSizeToFit>
@@ -692,15 +695,16 @@ function StepAmount({ amount, onAmountChange, onConfirm }: StepAmountProps) {
         </TouchableOpacity>
       </View>
 
-      <CameraOverlay
-        visible={cameraVisible}
-        cameraGranted={ocr.cameraGranted}
-        cameraCanAskAgain={ocr.cameraCanAskAgain}
-        isProcessing={ocr.isScanning}
-        onRequestPermission={ocr.requestCameraPermission}
-        onCapture={handleCameraCapture}
-        onClose={() => setCameraVisible(false)}
-      />
+        <CameraOverlay
+          visible={cameraVisible}
+          cameraGranted={ocr.cameraGranted}
+          cameraCanAskAgain={ocr.cameraCanAskAgain}
+          isProcessing={ocr.isScanning}
+          onRequestPermission={ocr.requestCameraPermission}
+          onCapture={handleCameraCapture}
+          onClose={() => setCameraVisible(false)}
+        />
+      </ScrollView>
     </Animated.View>
   );
 }
@@ -765,30 +769,47 @@ interface StepInstructionsProps {
 
 function StepInstructions({ total, onContinue, onBack }: StepInstructionsProps) {
   const inventory = useWalletStore((s) => s.inventory);
-  const processPayment = useWalletStore((s) => s.processPayment);
+  const processRealPayment = useWalletStore((s) => s.processRealPayment);
   const toggleBypass = useWalletStore((s) => s.toggleBypass);
   const isBypassActive = useWalletStore((s) => s.isBypassActive);
 
   const [bypassModalVisible, setBypassModalVisible] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
 
   // Calcola la selezione ottimale dall'inventory corrente.
   const result = calculateOptimalPayment(inventory, total);
 
-  const handleContinue = useCallback(() => {
-    const payResult = processPayment(total);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onContinue(payResult.coveredAmount);
-  }, [processPayment, total, onContinue]);
+  const handleContinue = useCallback(async () => {
+    setIsCompleting(true);
+    try {
+      const payResult = await processRealPayment(total);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      onContinue(payResult.coveredAmount);
+    } catch (error) {
+      Alert.alert('Pagamento non registrato', error instanceof Error ? error.message : 'Riprova tra poco.');
+    } finally {
+      setIsCompleting(false);
+    }
+  }, [processRealPayment, total, onContinue]);
 
   const handleBypassSelect = useCallback(
-    (bill: MoneyItem) => {
+    async (bill: MoneyItem) => {
       setBypassModalVisible(false);
-      toggleBypass();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      // Usa il valore della banconota scelta come "covered amount".
-      onContinue(bill.value);
+      if (!isBypassActive) {
+        toggleBypass();
+      }
+      setIsCompleting(true);
+      try {
+        const payResult = await processRealPayment(total, bill.value);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        onContinue(payResult.coveredAmount);
+      } catch (error) {
+        Alert.alert('Pagamento non registrato', error instanceof Error ? error.message : 'Riprova tra poco.');
+      } finally {
+        setIsCompleting(false);
+      }
     },
-    [toggleBypass, onContinue],
+    [isBypassActive, processRealPayment, toggleBypass, total, onContinue],
   );
 
   const handleOpenBypass = useCallback(() => {
@@ -852,15 +873,18 @@ function StepInstructions({ total, onContinue, onBack }: StepInstructionsProps) 
 
         {!result.isInsufficient && (
           <TouchableOpacity
-            style={[styles.btnPrimary, styles.btnContinue]}
-            onPress={handleContinue}
+            style={[styles.btnPrimary, styles.btnContinue, isCompleting && styles.btnDisabled]}
+            onPress={() => {
+              handleContinue().catch(() => {});
+            }}
+            disabled={isCompleting}
             accessible
             accessibilityLabel="Ho consegnato i soldi, vai al passo successivo"
             accessibilityRole="button"
           >
-            <CheckCircle size={24} color="#FFFFFF" />
+            {isCompleting ? <ActivityIndicator color="#FFFFFF" /> : <CheckCircle size={24} color="#FFFFFF" />}
             <Text style={[styles.btnPrimaryText, { marginLeft: 10 }]}>
-              HO CONSEGNATO I SOLDI
+              {isCompleting ? 'REGISTRO...' : 'HO CONSEGNATO I SOLDI'}
             </Text>
           </TouchableOpacity>
         )}
@@ -886,7 +910,9 @@ function StepInstructions({ total, onContinue, onBack }: StepInstructionsProps) 
                 <TouchableOpacity
                   key={bill.id}
                   style={[styles.modalBill, { borderColor: '#E07B00', backgroundColor: '#FFF3CD' }]}
-                  onPress={() => handleBypassSelect(bill)}
+                  onPress={() => {
+                    handleBypassSelect(bill).catch(() => {});
+                  }}
                   accessible
                   accessibilityLabel={`Banconota da ${formatEuro(bill.value)}`}
                   accessibilityRole="button"
@@ -975,6 +1001,8 @@ export default function PaymentWizard() {
   const [direction, setDirection] = useState<Direction>('forward');
   const [amountStr, setAmountStr] = useState('');
   const [coveredAmount, setCoveredAmount] = useState(0);
+  const [studentId, setStudentId] = useState<string | null>(null);
+  const [isSendingSos, setIsSendingSos] = useState(false);
 
   const total = parseFloat(amountStr) || 0;
 
@@ -1012,6 +1040,31 @@ export default function PaymentWizard() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, []);
 
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setStudentId(data.user?.id ?? null);
+    }).catch(() => {
+      setStudentId(null);
+    });
+  }, []);
+
+  const handleSos = useCallback(async () => {
+    if (!studentId || isSendingSos) {
+      return;
+    }
+
+    setIsSendingSos(true);
+    try {
+      await sendSos(studentId);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert('SOS inviato', 'Il tutor ha ricevuto una richiesta di aiuto.');
+    } catch (error) {
+      Alert.alert('SOS non inviato', error instanceof Error ? error.message : 'Riprova tra poco.');
+    } finally {
+      setIsSendingSos(false);
+    }
+  }, [isSendingSos, studentId]);
+
   // Le animazioni entering/exiting variano in base alla direzione.
   const entering = direction === 'forward' ? SlideInRight.duration(280) : SlideInLeft.duration(280);
   const exiting  = direction === 'forward' ? SlideOutLeft.duration(280) : SlideOutRight.duration(280);
@@ -1041,7 +1094,22 @@ export default function PaymentWizard() {
         ))}
       </View>
 
-      <Text style={styles.stepLabel}>{stepTitles[step]}</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.stepLabel}>{stepTitles[step]}</Text>
+        <TouchableOpacity
+          style={[styles.sosButton, (!studentId || isSendingSos) && styles.sosButtonDisabled]}
+          onPress={() => {
+            handleSos().catch(() => {});
+          }}
+          disabled={!studentId || isSendingSos}
+          accessible
+          accessibilityLabel="Invia richiesta di aiuto al tutor"
+          accessibilityRole="button"
+        >
+          <LifeBuoy size={18} color="#8A1C1C" />
+          <Text style={styles.sosButtonText}>{isSendingSos ? 'Invio...' : 'SOS'}</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Il key forza React a rimontare il componente ad ogni step change,
           attivando le animazioni entering/exiting di Reanimated. */}
@@ -1108,16 +1176,47 @@ const styles = StyleSheet.create({
     backgroundColor: '#27AE60',
   },
   stepLabel: {
-    textAlign: 'center',
     fontSize: 14,
     fontWeight: '600',
     color: '#666666',
+  },
+  headerRow: {
+    minHeight: 42,
     marginBottom: 8,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sosButton: {
+    position: 'absolute',
+    right: 16,
+    minHeight: 36,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#F0B7B7',
+    backgroundColor: '#FFF0F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  sosButtonDisabled: {
+    opacity: 0.45,
+  },
+  sosButtonText: {
+    color: '#8A1C1C',
+    fontSize: 13,
+    fontWeight: '900',
   },
 
   // Container step
   stepContainer: {
     flex: 1,
+  },
+  scrollContainer: {
+    flexGrow: 1,
+    paddingBottom: 24,
   },
 
   // Back button

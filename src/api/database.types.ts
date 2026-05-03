@@ -38,6 +38,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       wallets: {
         Row: {
@@ -61,6 +62,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       tutor_students: {
         Row: {
@@ -78,6 +80,73 @@ export interface Database {
           student_id?: string;
           created_at?: string;
         };
+        Relationships: [];
+      };
+      activity_logs: {
+        Row: {
+          id: string;
+          student_id: string;
+          tutor_id: string | null;
+          kind: 'payment' | 'sos' | 'wallet_adjustment';
+          amount: number | null;
+          covered_amount: number | null;
+          used_bypass: boolean;
+          message: string;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          student_id: string;
+          tutor_id?: string | null;
+          kind: 'payment' | 'sos' | 'wallet_adjustment';
+          amount?: number | null;
+          covered_amount?: number | null;
+          used_bypass?: boolean;
+          message: string;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          student_id?: string;
+          tutor_id?: string | null;
+          kind?: 'payment' | 'sos' | 'wallet_adjustment';
+          amount?: number | null;
+          covered_amount?: number | null;
+          used_bypass?: boolean;
+          message?: string;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      push_tokens: {
+        Row: {
+          id: string;
+          user_id: string;
+          token: string;
+          platform: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          token: string;
+          platform?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          token?: string;
+          platform?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
       };
     };
     Views: Record<string, never>;

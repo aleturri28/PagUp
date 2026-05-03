@@ -1,29 +1,38 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
+import type {
+  ExpoSpeechRecognitionErrorEvent,
+  ExpoSpeechRecognitionResultEvent,
+} from 'expo-speech-recognition';
 
-type VoiceModule = {
-  onSpeechResults: ((e: { value?: string[] }) => void) | undefined;
-  onSpeechPartialResults: ((e: { value?: string[] }) => void) | undefined;
-  onSpeechError: ((e: { error?: { code?: string; message?: string } }) => void) | undefined;
-  onSpeechEnd: (() => void) | undefined;
-  onSpeechStart: (() => void) | undefined;
-  start: (locale: string) => Promise<void>;
-  stop: () => Promise<void>;
-  destroy: () => Promise<void>;
-  removeAllListeners: () => void;
-  isAvailable: () => Promise<0 | 1>;
+type SpeechRecognitionModule = {
+  start: (options: {
+    lang?: string;
+    interimResults?: boolean;
+    maxAlternatives?: number;
+    contextualStrings?: string[];
+    continuous?: boolean;
+  }) => void;
+  stop: () => void;
+  abort: () => void;
+  getPermissionsAsync: () => Promise<{ granted: boolean; canAskAgain: boolean }>;
+  requestPermissionsAsync: () => Promise<{ granted: boolean; canAskAgain: boolean }>;
+  addListener: (
+    eventName: 'start' | 'result' | 'error' | 'end',
+    listener: (event: ExpoSpeechRecognitionResultEvent | ExpoSpeechRecognitionErrorEvent | null) => void,
+  ) => { remove: () => void };
 };
 
-let Voice: VoiceModule | null = null;
+let SpeechRecognition: SpeechRecognitionModule | null = null;
+
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  Voice = require('@react-native-voice/voice').default as VoiceModule;
+  SpeechRecognition = require('expo-speech-recognition').ExpoSpeechRecognitionModule as SpeechRecognitionModule;
 } catch {
-  // Native module non disponibile in Expo Go.
+  // Native module non disponibile nella build corrente.
 }
 
-export const nativeVoiceAvailable = Voice !== null;
+export const nativeVoiceAvailable = SpeechRecognition !== null;
 
 const DIRECT_NUMBER_WORDS: Record<string, number> = {
   zero: 0,
@@ -326,7 +335,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
   useEffect(() => {
     cleanedUp.current = false;
 
-    Audio.getPermissionsAsync()
+    SpeechRecognition?.getPermissionsAsync()
       .then((permission) => {
         if (cleanedUp.current) {
           return;
@@ -342,15 +351,20 @@ export function useVoiceInput(): UseVoiceInputReturn {
 
     return () => {
       cleanedUp.current = true;
-      if (Voice) {
-        Voice.destroy().catch(() => {});
-        Voice.removeAllListeners();
-      }
+      SpeechRecognition?.abort();
     };
   }, []);
 
   const requestMicrophonePermission = useCallback(async (): Promise<boolean> => {
-    const currentPermission = await Audio.getPermissionsAsync();
+    if (!SpeechRecognition) {
+      setState((current) => ({
+        ...current,
+        error: 'Riconoscimento vocale non disponibile in questa build. Reinstalla la development build aggiornata.',
+      }));
+      return false;
+    }
+
+    const currentPermission = await SpeechRecognition.getPermissionsAsync();
     if (currentPermission.granted) {
       setState((current) => ({
         ...current,
@@ -360,7 +374,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
       return true;
     }
 
-    const response = await Audio.requestPermissionsAsync();
+    const response = await SpeechRecognition.requestPermissionsAsync();
     setState((current) => ({
       ...current,
       microphoneGranted: response.granted,
@@ -400,10 +414,10 @@ export function useVoiceInput(): UseVoiceInputReturn {
   }, []);
 
   const startListening = useCallback(async () => {
-    if (!nativeVoiceAvailable || !Voice) {
+    if (!SpeechRecognition) {
       setState((current) => ({
         ...current,
-        error: 'Riconoscimento vocale non disponibile in Expo Go. Usa una build dev client.',
+        error: 'Riconoscimento vocale non disponibile in questa build. Reinstalla la development build aggiornata.',
       }));
       return;
     }
@@ -412,19 +426,6 @@ export function useVoiceInput(): UseVoiceInputReturn {
     if (!permissionGranted) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
-    }
-
-    try {
-      const available = await Voice.isAvailable();
-      if (!available) {
-        setState((current) => ({
-          ...current,
-          error: 'Il riconoscimento vocale non e disponibile su questo dispositivo.',
-        }));
-        return;
-      }
-    } catch {
-      // Alcuni wrapper non espongono correttamente il check: proseguiamo.
     }
 
     setState((current) => ({
@@ -438,72 +439,14 @@ export function useVoiceInput(): UseVoiceInputReturn {
 
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    Voice.onSpeechStart = () => {
-      if (cleanedUp.current) {
-        return;
-      }
-
-      setState((current) => ({
-        ...current,
-        isListening: true,
-        isProcessing: false,
-      }));
-    };
-
-    Voice.onSpeechPartialResults = (event: { value?: string[] }) => {
-      if (cleanedUp.current) {
-        return;
-      }
-
-      const partialTranscript = event.value?.[0] ?? '';
-      setState((current) => ({
-        ...current,
-        transcript: partialTranscript,
-      }));
-    };
-
-    Voice.onSpeechResults = (event: { value?: string[] }) => {
-      if (cleanedUp.current) {
-        return;
-      }
-
-      finalizeTranscript(event.value?.[0] ?? '');
-    };
-
-    Voice.onSpeechError = (event: { error?: { code?: string; message?: string } }) => {
-      if (cleanedUp.current) {
-        return;
-      }
-
-      const message = event.error?.message ?? 'Errore riconoscimento vocale.';
-      setState((current) => ({
-        ...current,
-        isListening: false,
-        isProcessing: false,
-        error:
-          message.toLowerCase().includes('permission')
-            ? current.microphoneCanAskAgain
-              ? "Mi serve il microfono per ascoltare l'importo. Puoi autorizzarlo e riprovare."
-              : "Il microfono e stato bloccato. Apri le impostazioni dell'app per attivarlo."
-            : message,
-      }));
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    };
-
-    Voice.onSpeechEnd = () => {
-      if (cleanedUp.current) {
-        return;
-      }
-
-      setState((current) => ({
-        ...current,
-        isListening: false,
-        isProcessing: current.transcript.length > 0,
-      }));
-    };
-
     try {
-      await Voice.start('it-IT');
+      SpeechRecognition.start({
+        lang: 'it-IT',
+        interimResults: true,
+        maxAlternatives: 3,
+        contextualStrings: ['euro', 'centesimi', 'virgola', 'quindici euro e cinquanta'],
+        continuous: false,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Impossibile avviare il microfono.';
       setState((current) => ({
@@ -517,12 +460,12 @@ export function useVoiceInput(): UseVoiceInputReturn {
   }, [finalizeTranscript, requestMicrophonePermission]);
 
   const stopListening = useCallback(async () => {
-    if (!Voice) {
+    if (!SpeechRecognition) {
       return;
     }
 
     try {
-      await Voice.stop();
+      SpeechRecognition.stop();
       setState((current) => ({
         ...current,
         isListening: false,
@@ -540,6 +483,54 @@ export function useVoiceInput(): UseVoiceInputReturn {
   const clearError = useCallback(() => {
     setState((current) => ({ ...current, error: null }));
   }, []);
+
+  useEffect(() => {
+    if (!SpeechRecognition) {
+      return;
+    }
+
+    const subscriptions = [
+      SpeechRecognition.addListener('start', () => {
+        if (cleanedUp.current) return;
+        setState((current) => ({ ...current, isListening: true, isProcessing: false }));
+      }),
+      SpeechRecognition.addListener('result', (event) => {
+        if (cleanedUp.current || !event || !('results' in event)) return;
+        const transcript = event.results[0]?.transcript ?? '';
+        if (event.isFinal) {
+          finalizeTranscript(transcript);
+          return;
+        }
+        setState((current) => ({ ...current, transcript }));
+      }),
+      SpeechRecognition.addListener('error', (event) => {
+        if (cleanedUp.current || !event || !('message' in event)) return;
+        const message =
+          event.error === 'not-allowed'
+            ? "Mi serve il microfono e il riconoscimento vocale. Apri le impostazioni dell'app se li hai bloccati."
+            : event.message || 'Errore riconoscimento vocale.';
+        setState((current) => ({
+          ...current,
+          isListening: false,
+          isProcessing: false,
+          error: message,
+        }));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }),
+      SpeechRecognition.addListener('end', () => {
+        if (cleanedUp.current) return;
+        setState((current) => ({
+          ...current,
+          isListening: false,
+          isProcessing: current.transcript.length > 0,
+        }));
+      }),
+    ];
+
+    return () => {
+      subscriptions.forEach((subscription) => subscription.remove());
+    };
+  }, [finalizeTranscript]);
 
   return {
     ...state,

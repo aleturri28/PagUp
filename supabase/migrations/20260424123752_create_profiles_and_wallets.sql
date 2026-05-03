@@ -120,6 +120,10 @@ CREATE POLICY "wallets: student self update"
   ON public.wallets FOR UPDATE
   USING (auth.uid() = user_id);
 
+CREATE POLICY "wallets: student self insert"
+  ON public.wallets FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
 -- Il tutor legge i wallet dei propri studenti
 CREATE POLICY "wallets: tutor reads student wallets"
   ON public.wallets FOR SELECT

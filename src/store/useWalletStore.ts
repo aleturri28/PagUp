@@ -10,6 +10,7 @@ import {
   subtractItemsFromInventory,
   PaymentResult,
 } from '../utils/paymentLogic';
+import { persistWallet, recordPayment } from '../api/payments';
 
 // ============================================================
 // STATO DEL WALLET
@@ -37,6 +38,9 @@ interface WalletActions {
   // Esegue il pagamento: sottrae gli items usati dall'inventory.
   // Se isBypassActive e l'inventory è insufficiente, logga e bypassa.
   processPayment: (total: number) => PaymentResult;
+
+  // Versione reale: aggiorna wallet Supabase, registra log e notifica il tutor.
+  processRealPayment: (total: number, coveredOverride?: number) => Promise<PaymentResult>;
 
   // Attiva/disattiva il bypass "Ho altri soldi".
   toggleBypass: () => void;
@@ -100,6 +104,47 @@ export const useWalletStore = create<WalletStore>()(
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
         return result;
+      },
+
+      processRealPayment: async (total, coveredOverride) => {
+        const { inventory, isBypassActive } = get();
+        const result = calculateOptimalPayment(inventory, total);
+        const coveredAmount = coveredOverride ?? result.coveredAmount;
+        const usedBypass = coveredOverride !== undefined || (result.isInsufficient && isBypassActive);
+
+        if (result.isInsufficient && !isBypassActive) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          return result;
+        }
+
+        const { data, error } = await supabase.auth.getUser();
+        if (error || !data.user) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          throw error ?? new Error('Utente non autenticato.');
+        }
+
+        let nextInventory = inventory;
+        if (!usedBypass) {
+          nextInventory = subtractItemsFromInventory(inventory, result.selectedItems);
+          set({ inventory: nextInventory });
+          await persistWallet(data.user.id, nextInventory);
+        }
+
+        await recordPayment({
+          studentId: data.user.id,
+          amount: total,
+          coveredAmount,
+          usedBypass,
+          selectedItems: result.selectedItems,
+        });
+
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        return {
+          ...result,
+          coveredAmount,
+          isInsufficient: false,
+          change: Math.max(0, Math.round((coveredAmount - total) * 100) / 100),
+        };
       },
 
       toggleBypass: () => {

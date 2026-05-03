@@ -52,7 +52,8 @@ export function calculateOptimalPayment(
   total: number,
 ): PaymentResult {
   // Ordina per valore decrescente: prima le banconote grandi.
-  const sorted = [...inventory].sort((a, b) => b.value - a.value);
+  const safeInventory = inventory || [];
+  const sorted = [...safeInventory].sort((a, b) => b.value - a.value);
 
   const selectedItems: MoneyItem[] = [];
   let coveredAmount = 0;
