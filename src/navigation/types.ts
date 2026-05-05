@@ -6,5 +6,6 @@ export type RootStackParamList = {
   Training: undefined;
   WalletTest: undefined;
   TutorDashboard: undefined;
-  Settings: undefined;
+  TutorSettings: undefined;
+  Settings: { unlocked?: boolean } | undefined;
 };

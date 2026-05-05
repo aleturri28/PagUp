@@ -7,8 +7,10 @@ import { MoneyItem } from '../api/database.types';
 import { supabase } from '../api/supabase';
 import {
   calculateOptimalPayment,
+  calculateStudentPayment,
   subtractItemsFromInventory,
   PaymentResult,
+  PaymentMode,
 } from '../utils/paymentLogic';
 import { persistWallet, recordPayment } from '../api/payments';
 
@@ -40,7 +42,7 @@ interface WalletActions {
   processPayment: (total: number) => PaymentResult;
 
   // Versione reale: aggiorna wallet Supabase, registra log e notifica il tutor.
-  processRealPayment: (total: number, coveredOverride?: number) => Promise<PaymentResult>;
+  processRealPayment: (total: number, coveredOverride?: number, mode?: PaymentMode) => Promise<PaymentResult>;
 
   // Attiva/disattiva il bypass "Ho altri soldi".
   toggleBypass: () => void;
@@ -106,9 +108,9 @@ export const useWalletStore = create<WalletStore>()(
         return result;
       },
 
-      processRealPayment: async (total, coveredOverride) => {
+      processRealPayment: async (total, coveredOverride, mode = 'exact') => {
         const { inventory, isBypassActive } = get();
-        const result = calculateOptimalPayment(inventory, total);
+        const result = calculateStudentPayment(inventory, total, mode);
         const coveredAmount = coveredOverride ?? result.coveredAmount;
         const usedBypass = coveredOverride !== undefined || (result.isInsufficient && isBypassActive);
 

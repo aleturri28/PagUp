@@ -9,6 +9,7 @@ export interface Profile {
   id: string;
   role: UserRole;
   fullName: string | null;
+  username: string;
   avatarUrl: string | null;
 }
 
@@ -23,7 +24,7 @@ export async function getCurrentSession(): Promise<Session | null> {
 export async function getProfile(userId: string): Promise<Profile> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, role, full_name, avatar_url')
+    .select('id, role, full_name, username, avatar_url')
     .eq('id', userId)
     .single();
 
@@ -35,6 +36,7 @@ export async function getProfile(userId: string): Promise<Profile> {
     id: data.id,
     role: data.role,
     fullName: data.full_name,
+    username: data.username,
     avatarUrl: data.avatar_url,
   };
 }
@@ -71,7 +73,12 @@ export async function signInWithPassword(email: string, password: string): Promi
   };
 }
 
-export async function signUp(email: string, password: string, role: 'student' | 'tutor' = 'student'): Promise<{
+export async function signUp(
+  email: string,
+  password: string,
+  role: 'student' | 'tutor' = 'student',
+  username?: string,
+): Promise<{
   session: Session;
   profile: Profile;
   route: RoleRoute;
@@ -82,6 +89,7 @@ export async function signUp(email: string, password: string, role: 'student' | 
     options: {
       data: {
         role,
+        username,
       }
     }
   });

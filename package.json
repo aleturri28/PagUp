@@ -7,7 +7,9 @@
     "android": "export ANDROID_HOME=\"$HOME/Library/Android/sdk\" && export JAVA_HOME=\"/opt/homebrew/opt/openjdk@17\" && npx jetify && expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "test": "jest"
+    "test": "jest",
+    "audit:student": "npx impeccable detect src/screens/student && npx eslint --no-eslintrc -c .eslintrc.a11y.json --ext .ts,.tsx src/screens/student",
+    "audit:tutor": "npx impeccable detect src/screens/tutor"
   },
   "jest": {
     "preset": "jest-expo/node",
@@ -54,7 +56,11 @@
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.1.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.1",
+    "@typescript-eslint/parser": "^8.59.1",
     "babel-preset-expo": "^55.0.18",
+    "eslint-plugin-react-native-a11y": "^3.5.1",
+    "impeccable": "^2.1.8",
     "jest": "^29.7.0",
     "jest-expo": "~54.0.17",
     "jetifier": "^2.0.0",

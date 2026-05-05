@@ -29,6 +29,7 @@ function MoneyCard({ item, isSelected }: MoneyCardProps) {
       style={[styles.card, isSelected && styles.cardSelected]}
       accessible
       accessibilityLabel={`${item.type === 'coin' ? 'Moneta' : 'Banconota'} da ${formatEuro(item.value)}${isSelected ? ', selezionata per il pagamento' : ''}`}
+      accessibilityHint={isSelected ? 'Questo taglio verrà usato per il pagamento' : 'Taglio nel portafoglio'}
     >
       {/* Segnaposto immagine */}
       <View style={[styles.imagePlaceholder, item.type === 'bill' ? styles.billPlaceholder : styles.coinPlaceholder]}>
@@ -111,7 +112,7 @@ export default function WalletTest() {
       <Text style={styles.title}>Wallet Test</Text>
 
       {/* Statistiche inventory */}
-      <View style={styles.statsRow} accessible accessibilityLabel={`Hai ${inventory.length} oggetti nel wallet`}>
+      <View style={styles.statsRow} accessible accessibilityLabel={`Hai ${inventory.length} oggetti nel wallet`} accessibilityHint="Mostra il numero di elementi e il saldo totale del wallet">
         <Text style={styles.statsText}>Items: {inventory.length}</Text>
         <Text style={styles.statsText}>
           Totale:{' '}
@@ -121,7 +122,7 @@ export default function WalletTest() {
 
       {/* Anteprima selezione algoritmo */}
       {inventory.length > 0 && (
-        <View style={styles.previewBox} accessible accessibilityLabel={`Per pagare ${formatEuro(TEST_PAYMENT_AMOUNT)}: selezionati ${preview.selectedItems.length} items, coprono ${formatEuro(preview.coveredAmount)}`}>
+        <View style={styles.previewBox} accessible accessibilityLabel={`Per pagare ${formatEuro(TEST_PAYMENT_AMOUNT)}: selezionati ${preview.selectedItems.length} items, coprono ${formatEuro(preview.coveredAmount)}`} accessibilityHint="Mostra l'anteprima dei tagli che verranno usati dall'algoritmo">
           <Text style={styles.previewTitle}>
             Algoritmo per {formatEuro(TEST_PAYMENT_AMOUNT)}:
           </Text>
@@ -152,6 +153,7 @@ export default function WalletTest() {
           onPress={handleLoadTestData}
           accessible
           accessibilityLabel="Carica dati di test nel wallet"
+          accessibilityHint="Aggiunge monete e banconote di esempio per testare il pagamento"
           accessibilityRole="button"
         >
           <Text style={styles.btnSecondaryText}>Carica Dati Test</Text>
@@ -162,6 +164,7 @@ export default function WalletTest() {
           onPress={toggleBypass}
           accessible
           accessibilityLabel={`Ho altri soldi: ${isBypassActive ? 'attivo' : 'non attivo'}`}
+          accessibilityHint="Attiva o disattiva la modalità bypass per pagare con banconote diverse"
           accessibilityRole="switch"
         >
           <Text style={styles.btnBypassText}>
@@ -174,6 +177,7 @@ export default function WalletTest() {
           onPress={handlePayment}
           accessible
           accessibilityLabel={`Paga ${formatEuro(TEST_PAYMENT_AMOUNT)}`}
+          accessibilityHint="Esegue il pagamento di test e mostra il risultato"
           accessibilityRole="button"
         >
           <Text style={styles.btnPayText}>Paga {formatEuro(TEST_PAYMENT_AMOUNT)}</Text>

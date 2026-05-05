@@ -7,11 +7,12 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StackScreenProps } from '@react-navigation/stack';
-import { ArrowLeft, Camera, Link2, LogOut, QrCode, Settings, X } from 'lucide-react-native';
+import { ArrowLeft, Camera, Link2, LogOut, UserPlus, X } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { RootStackParamList } from '../navigation/types';
 import { getProfile, signOut, UserRole } from '../api/auth';
@@ -72,18 +73,23 @@ function parsePairingPayload(raw: string): PairingPayload | null {
   return null;
 }
 
-export default function SettingsScreen({ navigation }: Props) {
+export default function SettingsScreen({ navigation, route }: Props) {
+  const { width } = useWindowDimensions();
   const [loading, setLoading] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [fullName, setFullName] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
   const [qrVisible, setQrVisible] = useState(false);
   const [scannerVisible, setScannerVisible] = useState(false);
   const [pairingBusy, setPairingBusy] = useState(false);
   const [scanLocked, setScanLocked] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const stopSync = useWalletStore((s) => s.stopSync);
+  const isCompact = width < 390;
+  const qrBoxSize = Math.max(220, Math.min(width - 88, 286));
+  const qrCodeSize = Math.max(180, Math.min(qrBoxSize - 38, 230));
 
   useEffect(() => {
     let mounted = true;
@@ -100,6 +106,16 @@ export default function SettingsScreen({ navigation }: Props) {
         setUserId(data.user.id);
         setRole(profile.role);
         setFullName(profile.fullName);
+        setEmail(data.user.email ?? null);
+
+        if (profile.role === 'student' && route.params?.unlocked !== true) {
+          Alert.alert('Accesso protetto', 'Tieni premuto il pulsante impostazioni per 3 secondi e inserisci il PIN tutor.');
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.reset({ index: 0, routes: [{ name: 'StudentHome' }] });
+          }
+        }
       } catch (error) {
         Alert.alert('Profilo non disponibile', error instanceof Error ? error.message : 'Riprova.');
       } finally {
@@ -111,7 +127,7 @@ export default function SettingsScreen({ navigation }: Props) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [navigation, route.params?.unlocked]);
 
   const pairingValue = useMemo(() => {
     if (!userId || role !== 'student') return '';
@@ -213,49 +229,49 @@ export default function SettingsScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.root}>
-      <View style={styles.header}>
+      <View style={[styles.header, isCompact && styles.headerCompact]}>
         <TouchableOpacity
           style={styles.iconButton}
           onPress={() => navigation.goBack()}
           accessibilityRole="button"
           accessibilityLabel="Indietro"
         >
-          <ArrowLeft size={24} color="#17352D" />
+          <ArrowLeft size={36} color="#06428C" strokeWidth={2.3} />
         </TouchableOpacity>
-        <View style={styles.headerTitleWrap}>
-          <Settings size={28} color="#0F6F53" />
-          <Text style={styles.title}>Impostazioni</Text>
-        </View>
+        <Text style={[styles.title, isCompact && styles.titleCompact]}>Impostazioni</Text>
         <View style={styles.iconButtonSpacer} />
       </View>
 
-      <View style={styles.content}>
+      <View style={[styles.content, isCompact && styles.contentCompact]}>
         <View style={styles.identityBand}>
-          <Text style={styles.identityLabel}>{role === 'tutor' ? 'Tutor' : 'Studente'}</Text>
-          <Text style={styles.identityName}>{fullName ?? 'Profilo PagUp'}</Text>
+          <Text style={[styles.identityName, isCompact && styles.identityNameCompact]}>{fullName ?? 'Profilo PagUp'}</Text>
+          <Text style={[styles.identityEmail, isCompact && styles.identityEmailCompact]}>{email ?? ''}</Text>
         </View>
 
         {profileLoading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator color="#0F6F53" />
+            <ActivityIndicator color="#003A80" />
             <Text style={styles.loadingText}>Carico profilo...</Text>
           </View>
         ) : role === 'student' ? (
           <TouchableOpacity
-            style={styles.pairingButton}
+            style={[styles.pairingButton, isCompact && styles.ctaButtonCompact]}
             onPress={() => setQrVisible(true)}
             accessibilityRole="button"
-            accessibilityLabel="Mostra QR pairing"
+            accessibilityLabel="Collega Tutor"
           >
-            <QrCode size={26} color="#FFFFFF" />
-            <View style={styles.buttonTextWrap}>
-              <Text style={styles.primaryButtonText}>Pairing tutor</Text>
-              <Text style={styles.secondaryButtonText}>Mostra il QR al tutor</Text>
-            </View>
+            {pairingBusy ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <UserPlus size={30} color="#FFFFFF" strokeWidth={2.7} />
+            )}
+            <Text style={styles.primaryButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>
+              Collega Tutor
+            </Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={styles.pairingButton}
+            style={[styles.pairingButton, isCompact && styles.ctaButtonCompact]}
             onPress={() => {
               openScanner().catch(() => {});
             }}
@@ -263,23 +279,22 @@ export default function SettingsScreen({ navigation }: Props) {
             accessibilityRole="button"
             accessibilityLabel="Scansiona QR studente"
           >
-            {pairingBusy ? <ActivityIndicator color="#FFFFFF" /> : <Camera size={26} color="#FFFFFF" />}
-            <View style={styles.buttonTextWrap}>
-              <Text style={styles.primaryButtonText}>{pairingBusy ? 'Collego...' : 'Scansiona QR'}</Text>
-              <Text style={styles.secondaryButtonText}>Collega uno studente</Text>
-            </View>
+            {pairingBusy ? <ActivityIndicator color="#FFFFFF" /> : <Camera size={24} color="#FFFFFF" />}
+            <Text style={styles.primaryButtonText}>{pairingBusy ? 'Collego...' : 'Scansiona QR'}</Text>
           </TouchableOpacity>
         )}
 
         <TouchableOpacity
-          style={[styles.logoutButton, loading && styles.buttonDisabled]}
+          style={[styles.logoutButton, isCompact && styles.ctaButtonCompact, loading && styles.buttonDisabled]}
           onPress={handleLogout}
           disabled={loading}
           accessibilityRole="button"
-          accessibilityLabel="Esci"
+          accessibilityLabel="Esci dall'account"
         >
-          {loading ? <ActivityIndicator color="#FFFFFF" /> : <LogOut size={22} color="#FFFFFF" />}
-          <Text style={styles.logoutButtonText}>{loading ? 'Uscita...' : 'Logout'}</Text>
+          {loading ? <ActivityIndicator color="#FFFFFF" /> : <LogOut size={30} color="#FFFFFF" strokeWidth={2.7} />}
+          <Text style={styles.logoutButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>
+            {loading ? 'Uscita...' : "Esci dall'account"}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -296,11 +311,11 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
 
           <View style={styles.qrStage}>
-            <View style={styles.qrBox}>
-              {pairingValue ? <QRCode value={pairingValue} size={230} quietZone={12} /> : null}
+            <View style={[styles.qrBox, { width: qrBoxSize, height: qrBoxSize }]}>
+              {pairingValue ? <QRCode value={pairingValue} size={qrCodeSize} quietZone={12} /> : null}
             </View>
-            <Text style={styles.qrTitle}>Mostra questo QR al tutor</Text>
-            <Text style={styles.qrText}>Quando il tutor lo scansiona, il tuo wallet comparira' nella sua dashboard.</Text>
+            <Text style={[styles.qrTitle, isCompact && styles.qrTitleCompact]}>Mostra questo QR al tutor</Text>
+            <Text style={[styles.qrText, isCompact && styles.qrTextCompact]}>Quando il tutor lo scansiona, il tuo wallet comparira' nella sua dashboard.</Text>
           </View>
         </SafeAreaView>
       </Modal>
@@ -325,7 +340,7 @@ export default function SettingsScreen({ navigation }: Props) {
             barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
             onBarcodeScanned={scanLocked ? undefined : handleBarcodeScanned}
           >
-            <View style={styles.scanFrame}>
+            <View style={[styles.scanFrame, { margin: isCompact ? 22 : 42 }]}>
               {pairingBusy ? <ActivityIndicator color="#FFFFFF" size="large" /> : null}
             </View>
           </CameraView>
@@ -338,113 +353,146 @@ export default function SettingsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F4F7F4',
+    backgroundColor: '#F8F8F9',
   },
   header: {
-    paddingHorizontal: 20,
-    paddingVertical: 18,
+    minHeight: 92,
+    paddingHorizontal: 36,
+    paddingTop: 14,
+    paddingBottom: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8EDF5',
+    backgroundColor: '#FFFFFF',
+  },
+  headerCompact: {
+    minHeight: 78,
+    paddingHorizontal: 18,
   },
   iconButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
-    backgroundColor: '#E4F1E8',
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconButtonSpacer: {
-    width: 46,
-    height: 46,
-  },
-  headerTitleWrap: {
-    alignItems: 'center',
-    gap: 8,
+    width: 42,
+    height: 42,
   },
   title: {
-    fontSize: 26,
+    fontSize: 38,
+    lineHeight: 46,
     fontWeight: '900',
-    color: '#102B22',
+    color: '#06428C',
+    textAlign: 'center',
+  },
+  titleCompact: {
+    fontSize: 28,
+    lineHeight: 34,
   },
   content: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 18,
-    gap: 16,
+    paddingHorizontal: 29,
+    paddingTop: 77,
+    gap: 0,
+    alignItems: 'stretch',
+  },
+  contentCompact: {
+    paddingHorizontal: 18,
+    paddingTop: 44,
   },
   identityBand: {
-    borderRadius: 8,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#DCE8DF',
-    padding: 18,
-  },
-  identityLabel: {
-    color: '#0F6F53',
-    fontSize: 13,
-    fontWeight: '900',
-    textTransform: 'uppercase',
+    alignItems: 'center',
+    paddingVertical: 0,
+    gap: 14,
+    marginBottom: 87,
   },
   identityName: {
-    marginTop: 6,
-    color: '#17352D',
-    fontSize: 22,
+    color: '#16171A',
+    fontSize: 38,
+    lineHeight: 44,
     fontWeight: '900',
+    textAlign: 'center',
+  },
+  identityNameCompact: {
+    fontSize: 30,
+    lineHeight: 36,
+  },
+  identityEmail: {
+    color: '#3E424B',
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  identityEmailCompact: {
+    fontSize: 18,
+    lineHeight: 24,
   },
   loadingBox: {
     minHeight: 76,
-    borderRadius: 8,
+    borderRadius: 12,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    marginBottom: 62,
   },
   loadingText: {
-    color: '#40564E',
-    fontSize: 15,
+    color: '#434751',
+    fontSize: 16,
     fontWeight: '700',
   },
   pairingButton: {
-    minHeight: 76,
-    borderRadius: 8,
-    backgroundColor: '#0F6F53',
+    height: 116,
+    borderRadius: 16,
+    backgroundColor: '#06428C',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 18,
-    gap: 14,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    gap: 24,
+    marginBottom: 88,
+    shadowColor: '#001B43',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 3,
   },
-  buttonTextWrap: {
-    flex: 1,
+  ctaButtonCompact: {
+    minHeight: 88,
+    height: 88,
+    gap: 14,
+    marginBottom: 36,
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 19,
+    fontSize: 30,
+    lineHeight: 36,
     fontWeight: '900',
-  },
-  secondaryButtonText: {
-    marginTop: 4,
-    color: 'rgba(255,255,255,0.78)',
-    fontSize: 14,
-    fontWeight: '700',
   },
   buttonDisabled: {
     opacity: 0.7,
   },
   logoutButton: {
-    minHeight: 58,
-    borderRadius: 8,
-    backgroundColor: '#D9534F',
+    height: 116,
+    borderRadius: 16,
+    backgroundColor: '#C91717',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 24,
+    paddingHorizontal: 24,
   },
   logoutButtonText: {
     color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 30,
+    lineHeight: 36,
+    fontWeight: '900',
   },
   modalRoot: {
     flex: 1,
@@ -491,12 +539,20 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     textAlign: 'center',
   },
+  qrTitleCompact: {
+    fontSize: 22,
+    lineHeight: 28,
+  },
   qrText: {
     color: '#40564E',
     fontSize: 17,
     lineHeight: 24,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  qrTextCompact: {
+    fontSize: 15,
+    lineHeight: 22,
   },
   scannerRoot: {
     flex: 1,

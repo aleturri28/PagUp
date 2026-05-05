@@ -11,6 +11,7 @@ export const EURO_DENOMINATIONS = [
 ] as const;
 
 export type EuroDenomination = (typeof EURO_DENOMINATIONS)[number];
+export type PaymentMode = 'exact' | 'fast';
 
 // ============================================================
 // RISULTATO DEL CALCOLO DI PAGAMENTO
@@ -32,6 +33,121 @@ export interface PaymentResult {
 // ARROTONDAMENTO A 2 DECIMALI (evita floating-point drift)
 // ============================================================
 const round2 = (n: number): number => Math.round(n * 100) / 100;
+const toCents = (n: number): number => Math.round(n * 100);
+const fromCents = (n: number): number => round2(n / 100);
+const MIN_USABLE_CENTS = 10;
+
+export const roundPaymentTarget = (amount: number): number =>
+  fromCents(Math.ceil(toCents(amount) / MIN_USABLE_CENTS) * MIN_USABLE_CENTS);
+
+function isUsableItem(item: MoneyItem): boolean {
+  return toCents(item.value) >= MIN_USABLE_CENTS;
+}
+
+function resultFromSelection(selectedItems: MoneyItem[], total: number): PaymentResult {
+  const coveredAmount = round2(selectedItems.reduce((sum, item) => sum + item.value, 0));
+  const isInsufficient = coveredAmount < roundPaymentTarget(total);
+  const change = isInsufficient ? 0 : round2(coveredAmount - total);
+
+  return {
+    selectedItems,
+    coveredAmount,
+    change,
+    isExact: change === 0 && !isInsufficient,
+    isInsufficient,
+  };
+}
+
+function findExactCombination(items: MoneyItem[], targetCents: number): MoneyItem[] | null {
+  const sorted = [...items].sort((a, b) => toCents(b.value) - toCents(a.value));
+  const bySum = new Map<number, MoneyItem[]>();
+  bySum.set(0, []);
+
+  for (const item of sorted) {
+    const value = toCents(item.value);
+    const entries = Array.from(bySum.entries());
+    for (const [sum, combo] of entries) {
+      const nextSum = sum + value;
+      if (nextSum > targetCents || bySum.has(nextSum)) continue;
+      const nextCombo = [...combo, item];
+      if (nextSum === targetCents) return nextCombo;
+      bySum.set(nextSum, nextCombo);
+    }
+  }
+
+  return null;
+}
+
+function findSmallestCoveringCombination(items: MoneyItem[], targetCents: number): MoneyItem[] {
+  const sorted = [...items].sort((a, b) => toCents(b.value) - toCents(a.value));
+  const bySum = new Map<number, MoneyItem[]>();
+  bySum.set(0, []);
+
+  for (const item of sorted) {
+    const value = toCents(item.value);
+    const entries = Array.from(bySum.entries());
+    for (const [sum, combo] of entries) {
+      const nextSum = sum + value;
+      if (bySum.has(nextSum)) continue;
+      bySum.set(nextSum, [...combo, item]);
+    }
+  }
+
+  let bestSum = Number.POSITIVE_INFINITY;
+  let bestCombo: MoneyItem[] = [];
+  bySum.forEach((combo, sum) => {
+    if (sum >= targetCents && sum < bestSum) {
+      bestSum = sum;
+      bestCombo = combo;
+    }
+  });
+
+  return bestCombo;
+}
+
+function calculateExactModePayment(inventory: MoneyItem[], total: number): PaymentResult {
+  const targetCents = toCents(roundPaymentTarget(total));
+  const usableItems = (inventory || []).filter(isUsableItem);
+  const exactCombo = findExactCombination(usableItems, targetCents);
+  return resultFromSelection(exactCombo ?? findSmallestCoveringCombination(usableItems, targetCents), total);
+}
+
+function calculateFastModePayment(inventory: MoneyItem[], total: number): PaymentResult {
+  const target = roundPaymentTarget(total);
+  const selectedItems: MoneyItem[] = [];
+  let coveredAmount = 0;
+
+  const bills = (inventory || [])
+    .filter((item) => item.type === 'bill' && isUsableItem(item))
+    .sort((a, b) => b.value - a.value);
+  const coins = (inventory || [])
+    .filter((item) => item.type === 'coin' && isUsableItem(item))
+    .sort((a, b) => b.value - a.value);
+
+  for (const item of bills) {
+    if (round2(coveredAmount) >= target) break;
+    selectedItems.push(item);
+    coveredAmount = round2(coveredAmount + item.value);
+  }
+
+  for (const item of coins) {
+    if (round2(coveredAmount) >= target) break;
+    selectedItems.push(item);
+    coveredAmount = round2(coveredAmount + item.value);
+  }
+
+  return resultFromSelection(selectedItems, total);
+}
+
+export function calculateStudentPayment(
+  inventory: MoneyItem[],
+  total: number,
+  mode: PaymentMode = 'exact',
+): PaymentResult {
+  return mode === 'fast'
+    ? calculateFastModePayment(inventory, total)
+    : calculateExactModePayment(inventory, total);
+}
 
 // ============================================================
 // ALGORITMO GREEDY DI PAGAMENTO
@@ -51,31 +167,7 @@ export function calculateOptimalPayment(
   inventory: MoneyItem[],
   total: number,
 ): PaymentResult {
-  // Ordina per valore decrescente: prima le banconote grandi.
-  const safeInventory = inventory || [];
-  const sorted = [...safeInventory].sort((a, b) => b.value - a.value);
-
-  const selectedItems: MoneyItem[] = [];
-  let coveredAmount = 0;
-
-  for (const item of sorted) {
-    // Aggiungi l'item solo se non abbiamo ancora coperto il totale.
-    if (round2(coveredAmount) < round2(total)) {
-      selectedItems.push(item);
-      coveredAmount = round2(coveredAmount + item.value);
-    }
-  }
-
-  const isInsufficient = round2(coveredAmount) < round2(total);
-  const change = isInsufficient ? 0 : round2(coveredAmount - total);
-
-  return {
-    selectedItems,
-    coveredAmount,
-    change,
-    isExact: change === 0 && !isInsufficient,
-    isInsufficient,
-  };
+  return calculateStudentPayment(inventory, total, 'exact');
 }
 
 // ============================================================

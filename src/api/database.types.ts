@@ -18,6 +18,7 @@ export interface Database {
           id: string;
           role: 'student' | 'tutor';
           full_name: string | null;
+          username: string;
           avatar_url: string | null;
           created_at: string;
           updated_at: string;
@@ -26,6 +27,7 @@ export interface Database {
           id: string;
           role: 'student' | 'tutor';
           full_name?: string | null;
+          username: string;
           avatar_url?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -34,6 +36,7 @@ export interface Database {
           id?: string;
           role?: 'student' | 'tutor';
           full_name?: string | null;
+          username?: string;
           avatar_url?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -68,16 +71,19 @@ export interface Database {
         Row: {
           tutor_id: string;
           student_id: string;
+          payment_mode: PaymentMode;
           created_at: string;
         };
         Insert: {
           tutor_id: string;
           student_id: string;
+          payment_mode?: PaymentMode;
           created_at?: string;
         };
         Update: {
           tutor_id?: string;
           student_id?: string;
+          payment_mode?: PaymentMode;
           created_at?: string;
         };
         Relationships: [];
@@ -156,6 +162,8 @@ export interface Database {
     };
   };
 }
+
+export type PaymentMode = 'exact' | 'fast';
 
 // Tipo core del dominio: rappresenta un singolo pezzo di denaro nel wallet.
 export interface MoneyItem {

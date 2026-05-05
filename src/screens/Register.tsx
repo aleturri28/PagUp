@@ -23,14 +23,21 @@ type Props = StackScreenProps<RootStackParamList, 'Register'>;
 export default function Register({ navigation }: Props) {
   const syncWithSupabase = useWalletStore((s) => s.syncWithSupabase);
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState<'student' | 'tutor'>('student');
   const [loading, setLoading] = useState(false);
 
   const handleRegister = useCallback(async () => {
-    if (!email.trim() || !password) {
-      Alert.alert('Dati mancanti', 'Inserisci email e password.');
+    if (!email.trim() || !username.trim() || !password) {
+      Alert.alert('Dati mancanti', 'Inserisci email, username e password.');
+      return;
+    }
+
+    const normalizedUsername = username.trim().toLowerCase();
+    if (!/^[a-z0-9._-]{3,20}$/.test(normalizedUsername)) {
+      Alert.alert('Username non valido', 'Usa 3-20 caratteri: lettere, numeri, punto, trattino o underscore.');
       return;
     }
 
@@ -46,7 +53,7 @@ export default function Register({ navigation }: Props) {
 
     setLoading(true);
     try {
-      const { session, profile, route } = await signUp(email.trim(), password, role);
+      const { session, profile, route } = await signUp(email.trim(), password, role, normalizedUsername);
       await registerForPushNotifications(session.user.id);
       if (profile.role === 'student') {
         await syncWithSupabase(session.user.id);
@@ -64,7 +71,7 @@ export default function Register({ navigation }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [email, password, confirmPassword, role, navigation, syncWithSupabase]);
+  }, [email, username, password, confirmPassword, role, navigation, syncWithSupabase]);
 
   return (
     <SafeAreaView style={styles.root}>
@@ -85,6 +92,14 @@ export default function Register({ navigation }: Props) {
             autoCapitalize="none"
             keyboardType="email-address"
             placeholder="email"
+            style={styles.input}
+            editable={!loading}
+          />
+          <TextInput
+            value={username}
+            onChangeText={setUsername}
+            autoCapitalize="none"
+            placeholder="username"
             style={styles.input}
             editable={!loading}
           />

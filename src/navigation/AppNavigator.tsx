@@ -5,6 +5,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import Login from '../screens/Login';
 import Register from '../screens/Register';
 import SettingsScreen from '../screens/Settings';
+import TutorSettings from '../screens/tutor/Settings';
 import StudentHome from '../screens/student/Home';
 import PaymentWizard from '../screens/student/PaymentWizard';
 import Training from '../screens/student/Training';
@@ -71,6 +72,7 @@ export default function AppNavigator() {
         <Stack.Screen name="Login" component={Login} />
         <Stack.Screen name="Register" component={Register} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
+        <Stack.Screen name="TutorSettings" component={TutorSettings} />
         <Stack.Screen name="StudentHome" component={StudentHome} />
         <Stack.Screen name="PaymentWizard" component={PaymentWizard} />
         <Stack.Screen name="Training" component={Training} />

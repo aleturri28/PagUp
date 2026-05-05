@@ -8,45 +8,103 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import {
   Banknote,
-  BellRing,
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
   CircleDollarSign,
   Clock3,
-  Eye,
-  Filter,
+  House,
   Minus,
   Plus,
-  ReceiptText,
+  RefreshCw,
   Settings,
   ShieldCheck,
+  UserRoundSearch,
+  Users,
   WalletCards,
+  Zap,
 } from 'lucide-react-native';
 import { StackScreenProps } from '@react-navigation/stack';
 import { supabase } from '../../api/supabase';
 import { Database, Json, MoneyItem } from '../../api/database.types';
-import { MoneyVisualizer } from '../../components/money/MoneyVisualizer';
 import { RootStackParamList } from '../../navigation/types';
-import { EURO_DENOMINATIONS, formatEuro } from '../../utils/paymentLogic';
+import { EURO_DENOMINATIONS, formatEuro, PaymentMode } from '../../utils/paymentLogic';
+import { tutorTheme as t } from '../../theme';
 
 type Props = StackScreenProps<RootStackParamList, 'TutorDashboard'>;
-
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type WalletRow = Database['public']['Tables']['wallets']['Row'];
 type ActivityRow = Database['public']['Tables']['activity_logs']['Row'];
-type LogFilter = 'all' | 'wallet_add' | 'payment';
+type TutorTab = 'home' | 'stats' | 'students' | 'wallet';
 
 interface StudentState {
   profile: ProfileRow;
   wallet: MoneyItem[];
   logs: ActivityRow[];
+  paymentMode: PaymentMode;
 }
 
+interface DailyBar {
+  label: string;
+  total: number;
+  clean: number;
+  bypasses: number;
+  sos: number;
+}
+
+interface StudentStats {
+  totalPayments: number;
+  bypassCount: number;
+  bypassRate: number;
+  sosCount: number;
+  totalVolume: number;
+  avgPayment: number;
+}
+
+type BreakdownEntry = { value: number; count: number };
+type DraftCounts = Record<string, number>;
+
+const DAY_LABELS_IT = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
 const TUTOR_PIN = process.env.EXPO_PUBLIC_TUTOR_PIN ?? '1234';
-const QUICK_DENOMS = EURO_DENOMINATIONS.filter((value) => value >= 0.5);
+const EDITOR_DENOMS = EURO_DENOMINATIONS.filter((value) => value >= 0.1);
+
+function getDailyPayments(logs: ActivityRow[]): DailyBar[] {
+  return Array.from({ length: 7 }, (_, i) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (6 - i));
+    const dayStr = date.toISOString().split('T')[0] ?? '';
+    const dayPayments = logs.filter((l) => l.kind === 'payment' && l.created_at.startsWith(dayStr));
+    return {
+      label: DAY_LABELS_IT[date.getDay()] ?? '—',
+      total: dayPayments.length,
+      clean: dayPayments.filter((l) => !l.used_bypass).length,
+      bypasses: dayPayments.filter((l) => l.used_bypass).length,
+      sos: logs.filter((l) => l.kind === 'sos' && l.created_at.startsWith(dayStr)).length,
+    };
+  });
+}
+
+function getStudentStats(logs: ActivityRow[]): StudentStats {
+  const payments = logs.filter((l) => l.kind === 'payment');
+  const bypassed = payments.filter((l) => l.used_bypass);
+  const sos = logs.filter((l) => l.kind === 'sos');
+  const volume = payments.reduce((sum, l) => sum + (l.amount ?? 0), 0);
+
+  return {
+    totalPayments: payments.length,
+    bypassCount: bypassed.length,
+    bypassRate: payments.length > 0 ? Math.round((bypassed.length / payments.length) * 100) : 0,
+    sosCount: sos.length,
+    totalVolume: Math.round(volume * 100) / 100,
+    avgPayment: payments.length > 0 ? Math.round((volume / payments.length) * 100) / 100 : 0,
+  };
+}
 
 function makeMoneyItem(value: number): MoneyItem {
   return {
@@ -61,6 +119,18 @@ function getBalance(items: MoneyItem[]): number {
   return Math.round(items.reduce((sum, item) => sum + item.value, 0) * 100) / 100;
 }
 
+function normalizeBreakdown(items: BreakdownEntry[]): BreakdownEntry[] {
+  return items
+    .filter((item) => item.value > 0 && item.count > 0)
+    .sort((a, b) => b.value - a.value);
+}
+
+function moneyBreakdown(items: MoneyItem[]): BreakdownEntry[] {
+  const counts = new Map<number, number>();
+  items.forEach((item) => counts.set(item.value, (counts.get(item.value) ?? 0) + 1));
+  return normalizeBreakdown([...counts.entries()].map(([value, count]) => ({ value, count })));
+}
+
 function metadataDirection(metadata: Json): 'add' | 'remove' | null {
   if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
     const direction = metadata.direction;
@@ -69,22 +139,61 @@ function metadataDirection(metadata: Json): 'add' | 'remove' | null {
   return null;
 }
 
-function matchesLogFilter(log: ActivityRow, filter: LogFilter): boolean {
-  if (filter === 'payment') return log.kind === 'payment';
-  if (filter === 'wallet_add') return log.kind === 'wallet_adjustment' && metadataDirection(log.metadata) === 'add';
-  return true;
+function metadataItems(metadata: Json): BreakdownEntry[] {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return [];
+
+  const rawItems = metadata.items;
+  if (Array.isArray(rawItems)) {
+    return normalizeBreakdown(
+      rawItems
+        .filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
+        .map((entry) => {
+          const row = entry as { value?: unknown; count?: unknown };
+          return {
+            value: typeof row.value === 'number' ? row.value : 0,
+            count: typeof row.count === 'number' ? row.count : 0,
+          };
+        }),
+    );
+  }
+
+  const selectedItems = metadata.selectedItems;
+  if (Array.isArray(selectedItems)) {
+    return moneyBreakdown(
+      selectedItems
+        .filter((entry) => (
+          !!entry &&
+          typeof entry === 'object' &&
+          !Array.isArray(entry) &&
+          typeof (entry as { id?: unknown }).id === 'string' &&
+          typeof (entry as { value?: unknown }).value === 'number'
+        ))
+        .map((entry) => entry as unknown as MoneyItem),
+    );
+  }
+
+  return [];
 }
 
-function logTone(log: ActivityRow): 'green' | 'amber' | 'red' | 'blue' {
-  if (log.kind === 'sos') return 'red';
-  if (log.kind === 'payment') return log.used_bypass ? 'amber' : 'blue';
-  return metadataDirection(log.metadata) === 'add' ? 'green' : 'amber';
+function totalFromBreakdown(items: BreakdownEntry[]): number {
+  return Math.round(items.reduce((sum, item) => sum + item.value * item.count, 0) * 100) / 100;
 }
 
-function logLabel(log: ActivityRow): string {
-  if (log.kind === 'payment') return log.used_bypass ? 'Pagamento + bypass' : 'Pagamento';
+function logKindLabel(log: ActivityRow): string {
   if (log.kind === 'sos') return 'SOS';
-  return metadataDirection(log.metadata) === 'add' ? 'Aggiunta wallet' : 'Rimozione wallet';
+  if (log.kind === 'payment') return log.used_bypass ? 'Pagamento veloce' : 'Pagamento';
+  return metadataDirection(log.metadata) === 'remove' ? 'Rimozione wallet' : 'Aggiunta wallet';
+}
+
+function logAmount(log: ActivityRow): number | null {
+  if (log.kind === 'payment') return log.covered_amount ?? log.amount;
+  const items = metadataItems(log.metadata);
+  if (items.length > 0) return totalFromBreakdown(items);
+  return log.amount;
+}
+
+function buildEmptyDraft(): DraftCounts {
+  return Object.fromEntries(EDITOR_DENOMS.map((value) => [String(value), 0]));
 }
 
 function AccessGate({ onUnlock }: { onUnlock: () => void }) {
@@ -122,25 +231,29 @@ function AccessGate({ onUnlock }: { onUnlock: () => void }) {
   }, [onUnlock, pin]);
 
   return (
-    <SafeAreaView style={styles.gateRoot}>
-      <View style={styles.gatePanel}>
-        <View style={styles.gateMark}>
-          <ShieldCheck size={38} color="#0C1915" />
+    <SafeAreaView style={gate.root}>
+      <View style={gate.card}>
+        <View style={gate.iconWrap}>
+          <ShieldCheck size={32} color={t.colors.primary} />
         </View>
-        <Text style={styles.gateKicker}>Area riservata</Text>
-        <Text style={styles.gateTitle}>Console Tutor</Text>
-        <Text style={styles.gateText}>Controllo wallet, pagamenti e richieste degli studenti collegati.</Text>
+        <Text style={gate.eyebrow}>Area riservata</Text>
+        <Text style={gate.title}>Console Tutor</Text>
+        <Text style={gate.body}>Controllo wallet, statistiche e log attivita degli studenti collegati.</Text>
 
         <TouchableOpacity
-          style={styles.bioButton}
-          onPress={() => {
-            unlockWithBiometry().catch(() => {});
-          }}
+          style={gate.bioBtn}
+          onPress={() => { unlockWithBiometry().catch(() => {}); }}
           disabled={checkingBio}
         >
-          {checkingBio ? <ActivityIndicator color="#F7FFF8" /> : <ShieldCheck size={22} color="#F7FFF8" />}
-          <Text style={styles.bioButtonText}>{checkingBio ? 'Controllo...' : 'Sblocca con biometria'}</Text>
+          {checkingBio ? <ActivityIndicator color="#FFFFFF" size="small" /> : <ShieldCheck size={18} color="#FFFFFF" />}
+          <Text style={gate.bioBtnText}>{checkingBio ? 'Verifica...' : 'Sblocca con biometria'}</Text>
         </TouchableOpacity>
+
+        <View style={gate.divider}>
+          <View style={gate.dividerLine} />
+          <Text style={gate.dividerText}>oppure</Text>
+          <View style={gate.dividerLine} />
+        </View>
 
         <TextInput
           value={pin}
@@ -149,43 +262,112 @@ function AccessGate({ onUnlock }: { onUnlock: () => void }) {
           secureTextEntry
           maxLength={8}
           placeholder="PIN tutor"
-          placeholderTextColor="#7D8983"
-          style={styles.pinInput}
+          placeholderTextColor={t.colors.textDisabled}
+          style={gate.pinInput}
         />
-
-        <TouchableOpacity style={styles.pinButton} onPress={submitPin}>
-          <Text style={styles.pinButtonText}>Entra</Text>
+        <TouchableOpacity style={gate.pinBtn} onPress={submitPin}>
+          <Text style={gate.pinBtnText}>Entra</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
 
+function KpiCard({ label, value, sub, accent, cardStyle }: { label: string; value: string; sub?: string; accent?: string; cardStyle?: object }) {
+  return (
+    <View style={[styles.kpiCard, cardStyle, accent ? { borderColor: accent } : null]}>
+      <Text style={styles.kpiLabel}>{label}</Text>
+      <Text style={styles.kpiValue} numberOfLines={1}>{value}</Text>
+      {sub ? <Text style={styles.kpiSub}>{sub}</Text> : null}
+    </View>
+  );
+}
+
+function WeeklyBarChart({ bars }: { bars: DailyBar[] }) {
+  const maxVal = Math.max(...bars.map((bar) => bar.total), 1);
+  return (
+    <View style={styles.chartWrap}>
+      <View style={styles.chartFrame}>
+        {bars.map((bar) => {
+          const height = bar.total > 0 ? Math.max((bar.total / maxVal) * 110, 6) : 4;
+          const bypassHeight = bar.total > 0 ? (bar.bypasses / Math.max(bar.total, 1)) * height : 0;
+          const cleanHeight = height - bypassHeight;
+          return (
+            <View key={bar.label} style={styles.chartColumn}>
+              <View style={styles.chartTrack}>
+                {bar.total === 0 ? (
+                  <View style={styles.chartEmpty} />
+                ) : (
+                  <View style={[styles.chartBar, { height }]}>
+                    {bypassHeight > 0 ? <View style={[styles.chartSeg, { height: bypassHeight, backgroundColor: t.colors.warning }]} /> : null}
+                    {cleanHeight > 0 ? <View style={[styles.chartSeg, { height: cleanHeight, backgroundColor: t.colors.primary }]} /> : null}
+                  </View>
+                )}
+              </View>
+              {bar.sos > 0 ? <View style={styles.chartDot} /> : <View style={styles.chartDotSpacer} />}
+              <Text style={styles.chartLabel}>{bar.label}</Text>
+              <Text style={styles.chartCount}>{bar.total > 0 ? String(bar.total) : ''}</Text>
+            </View>
+          );
+        })}
+      </View>
+
+      <View style={styles.legendRow}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: t.colors.primary }]} />
+          <Text style={styles.legendText}>ok</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: t.colors.warning }]} />
+          <Text style={styles.legendText}>bypass</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: t.colors.error }]} />
+          <Text style={styles.legendText}>sos</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export default function TutorDashboard({ navigation }: Props) {
+  const { width } = useWindowDimensions();
   const [unlocked, setUnlocked] = useState(false);
   const [tutorId, setTutorId] = useState<string | null>(null);
   const [students, setStudents] = useState<StudentState[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [logFilter, setLogFilter] = useState<LogFilter>('all');
+  const [activeTab, setActiveTab] = useState<TutorTab>('home');
+  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
+  const [draftCounts, setDraftCounts] = useState<DraftCounts>(buildEmptyDraft);
+  const [walletBusy, setWalletBusy] = useState(false);
+  const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
 
   const selectedStudent = useMemo(
-    () => students.find((student) => student.profile.id === selectedStudentId) ?? students[0],
+    () => students.find((student) => student.profile.id === selectedStudentId) ?? students[0] ?? null,
     [selectedStudentId, students],
-  );
-
-  const selectedLogs = useMemo(
-    () => (selectedStudent?.logs ?? []).filter((log) => matchesLogFilter(log, logFilter)),
-    [logFilter, selectedStudent?.logs],
   );
 
   const allLogs = useMemo(() => students.flatMap((student) => student.logs), [students]);
   const totalBalance = useMemo(() => students.reduce((sum, student) => sum + getBalance(student.wallet), 0), [students]);
-  const paymentCount = useMemo(() => allLogs.filter((log) => log.kind === 'payment').length, [allLogs]);
-  const walletAddCount = useMemo(
-    () => allLogs.filter((log) => log.kind === 'wallet_adjustment' && metadataDirection(log.metadata) === 'add').length,
-    [allLogs],
+  const studentStats = useMemo(() => selectedStudent ? getStudentStats(selectedStudent.logs) : null, [selectedStudent]);
+  const weeklyBars = useMemo(() => selectedStudent ? getDailyPayments(selectedStudent.logs) : [], [selectedStudent]);
+  const walletBreakdown = useMemo(() => selectedStudent ? moneyBreakdown(selectedStudent.wallet) : [], [selectedStudent]);
+  const recentLogs = useMemo(() => selectedStudent ? selectedStudent.logs.slice(0, 50) : [], [selectedStudent]);
+  const latestLog = recentLogs[0] ?? null;
+  const totalPayments = useMemo(() => allLogs.filter((log) => log.kind === 'payment').length, [allLogs]);
+  const totalSos = useMemo(() => allLogs.filter((log) => log.kind === 'sos').length, [allLogs]);
+  const isCompact = width < 390;
+  const isNarrow = width < 360;
+  const contentWidth = Math.max(width - 28, 220);
+  const singleColumnCard = isCompact ? { minWidth: contentWidth } : undefined;
+  const walletPieceStyle = width < 430 ? { minWidth: Math.max((contentWidth - 8) / 2, 120) } : undefined;
+
+  const draftEntries = useMemo(
+    () => EDITOR_DENOMS.map((value) => ({ value, count: draftCounts[String(value)] ?? 0 })).filter((item) => item.count > 0),
+    [draftCounts],
   );
+  const draftTotal = useMemo(() => totalFromBreakdown(draftEntries), [draftEntries]);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -194,11 +376,26 @@ export default function TutorDashboard({ navigation }: Props) {
       if (userError || !userData.user) throw userError ?? new Error('Tutor non autenticato.');
       setTutorId(userData.user.id);
 
-      const { data: links, error: linkError } = await supabase
+      let links: Array<{ student_id: string; payment_mode: PaymentMode | null }> | null = null;
+
+      const { data: linksWithMode, error: linksWithModeError } = await supabase
         .from('tutor_students')
-        .select('student_id')
+        .select('student_id, payment_mode')
         .eq('tutor_id', userData.user.id);
-      if (linkError) throw linkError;
+
+      if (linksWithModeError) {
+        const { data: fallbackLinks, error: fallbackLinksError } = await supabase
+          .from('tutor_students')
+          .select('student_id')
+          .eq('tutor_id', userData.user.id);
+        if (fallbackLinksError) throw fallbackLinksError;
+        links = (fallbackLinks ?? []).map((row) => ({ student_id: row.student_id, payment_mode: 'exact' }));
+      } else {
+        links = (linksWithMode ?? []).map((row) => ({
+          student_id: row.student_id,
+          payment_mode: row.payment_mode === 'fast' ? 'fast' : 'exact',
+        }));
+      }
 
       const ids = (links ?? []).map((link) => link.student_id);
       if (ids.length === 0) {
@@ -209,34 +406,34 @@ export default function TutorDashboard({ navigation }: Props) {
 
       const [{ data: profiles, error: profilesError }, { data: wallets, error: walletsError }, { data: logs, error: logsError }] =
         await Promise.all([
-          supabase.from('profiles').select('*').in('id', ids),
+          supabase.from('profiles').select('*').in('id', ids).order('full_name', { ascending: true }),
           supabase.from('wallets').select('*').in('user_id', ids),
-          supabase
-            .from('activity_logs')
-            .select('*')
-            .in('student_id', ids)
-            .order('created_at', { ascending: false })
-            .limit(160),
+          supabase.from('activity_logs').select('*').in('student_id', ids).order('created_at', { ascending: false }).limit(300),
         ]);
 
       if (profilesError) throw profilesError;
       if (walletsError) throw walletsError;
       if (logsError) throw logsError;
 
+      const modeByStudent = new Map<string, PaymentMode>(
+        (links ?? []).map((link) => [link.student_id, link.payment_mode === 'fast' ? 'fast' : 'exact']),
+      );
       const walletByStudent = new Map((wallets ?? []).map((wallet: WalletRow) => [wallet.user_id, wallet.items]));
       const logsByStudent = new Map<string, ActivityRow[]>();
+
       (logs ?? []).forEach((log: ActivityRow) => {
         logsByStudent.set(log.student_id, [...(logsByStudent.get(log.student_id) ?? []), log]);
       });
 
-      const next = (profiles ?? []).map((profile: ProfileRow) => ({
+      const nextStudents = (profiles ?? []).map((profile: ProfileRow) => ({
         profile,
         wallet: walletByStudent.get(profile.id) ?? [],
         logs: logsByStudent.get(profile.id) ?? [],
+        paymentMode: modeByStudent.get(profile.id) ?? 'exact',
       }));
 
-      setStudents(next);
-      setSelectedStudentId((current) => current ?? next[0]?.profile.id ?? null);
+      setStudents(nextStudents);
+      setSelectedStudentId((current) => current && nextStudents.some((student) => student.profile.id === current) ? current : (nextStudents[0]?.profile.id ?? null));
     } catch (error) {
       Alert.alert('Dashboard non caricata', error instanceof Error ? error.message : 'Riprova.');
     } finally {
@@ -255,21 +452,17 @@ export default function TutorDashboard({ navigation }: Props) {
       .channel(`tutor-dashboard:${tutorId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'wallets' }, (payload) => {
         const wallet = payload.new as WalletRow;
-        setStudents((current) =>
-          current.map((student) =>
-            student.profile.id === wallet.user_id ? { ...student, wallet: wallet.items } : student,
-          ),
-        );
+        setStudents((current) => current.map((student) => (
+          student.profile.id === wallet.user_id ? { ...student, wallet: wallet.items } : student
+        )));
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_logs' }, (payload) => {
         const log = payload.new as ActivityRow;
-        setStudents((current) =>
-          current.map((student) =>
-            student.profile.id === log.student_id
-              ? { ...student, logs: [log, ...student.logs].slice(0, 40) }
-              : student,
-          ),
-        );
+        setStudents((current) => current.map((student) => (
+          student.profile.id === log.student_id
+            ? { ...student, logs: [log, ...student.logs].slice(0, 80) }
+            : student
+        )));
       })
       .subscribe();
 
@@ -278,386 +471,646 @@ export default function TutorDashboard({ navigation }: Props) {
     };
   }, [tutorId, unlocked]);
 
-  const adjustWallet = useCallback(
-    async (student: StudentState, value: number, direction: 'add' | 'remove') => {
-      if (!tutorId) return;
+  useEffect(() => {
+    setDraftCounts(buildEmptyDraft());
+  }, [selectedStudentId]);
 
-      const nextWallet =
-        direction === 'add'
-          ? [...student.wallet, makeMoneyItem(value)]
-          : (() => {
-              const index = student.wallet.findIndex((item) => item.value === value);
-              if (index === -1) return student.wallet;
-              return student.wallet.filter((_, itemIndex) => itemIndex !== index);
-            })();
+  const updatePaymentMode = useCallback(async (student: StudentState, paymentMode: PaymentMode) => {
+    if (!tutorId || student.paymentMode === paymentMode) return;
 
-      if (nextWallet === student.wallet) return;
+    setStudents((current) => current.map((entry) => (
+      entry.profile.id === student.profile.id ? { ...entry, paymentMode } : entry
+    )));
 
-      setStudents((current) =>
-        current.map((entry) =>
-          entry.profile.id === student.profile.id ? { ...entry, wallet: nextWallet } : entry,
-        ),
+    const { error } = await supabase
+      .from('tutor_students')
+      .update({ payment_mode: paymentMode })
+      .eq('tutor_id', tutorId)
+      .eq('student_id', student.profile.id);
+
+    if (error) {
+      Alert.alert(
+        'Modalita non aggiornata',
+        error.message.includes('payment_mode')
+          ? 'La migration payment_mode non e attiva su questo database.'
+          : error.message,
       );
+      loadDashboard().catch(() => {});
+    }
+  }, [loadDashboard, tutorId]);
 
-      const { error } = await supabase
+  const changeDraft = useCallback((value: number, delta: number) => {
+    setDraftCounts((current) => {
+      const key = String(value);
+      const next = Math.max(0, (current[key] ?? 0) + delta);
+      return { ...current, [key]: next };
+    });
+  }, []);
+
+  const commitDraft = useCallback(async () => {
+    if (!tutorId || !selectedStudent || draftEntries.length === 0) return;
+    setWalletBusy(true);
+    try {
+      const addedItems = draftEntries.flatMap((entry) => (
+        Array.from({ length: entry.count }, () => makeMoneyItem(entry.value))
+      ));
+      const nextWallet = [...selectedStudent.wallet, ...addedItems];
+
+      const { error: walletError } = await supabase
         .from('wallets')
-        .upsert({ user_id: student.profile.id, items: nextWallet }, { onConflict: 'user_id' });
+        .upsert({ user_id: selectedStudent.profile.id, items: nextWallet }, { onConflict: 'user_id' });
 
-      if (error) {
-        Alert.alert('Wallet non aggiornato', error.message);
-        loadDashboard().catch(() => {});
-        return;
-      }
+      if (walletError) throw walletError;
 
-      await supabase.from('activity_logs').insert({
-        student_id: student.profile.id,
+      const { error: logError } = await supabase.from('activity_logs').insert({
+        student_id: selectedStudent.profile.id,
         tutor_id: tutorId,
         kind: 'wallet_adjustment',
-        amount: value,
-        message: `${direction === 'add' ? 'Aggiunto' : 'Rimosso'} ${formatEuro(value)} dal wallet di ${student.profile.full_name ?? 'studente'}.`,
-        metadata: { direction },
+        amount: draftTotal,
+        message: `Ricarica wallet per ${selectedStudent.profile.full_name ?? selectedStudent.profile.username}.`,
+        metadata: {
+          direction: 'add',
+          total: draftTotal,
+          items: draftEntries,
+        } as Json,
       });
-    },
-    [loadDashboard, tutorId],
-  );
+
+      if (logError) throw logError;
+
+      setStudents((current) => current.map((entry) => (
+        entry.profile.id === selectedStudent.profile.id ? { ...entry, wallet: nextWallet } : entry
+      )));
+      setDraftCounts(buildEmptyDraft());
+    } catch (error) {
+      Alert.alert('Wallet non aggiornato', error instanceof Error ? error.message : 'Riprova.');
+      loadDashboard().catch(() => {});
+    } finally {
+      setWalletBusy(false);
+    }
+  }, [draftEntries, draftTotal, loadDashboard, selectedStudent, tutorId]);
 
   if (!unlocked) {
     return <AccessGate onUnlock={() => setUnlocked(true)} />;
   }
 
+  const renderEmpty = () => (
+    <View style={styles.emptyCard}>
+      <Users size={30} color={t.colors.textSecondary} />
+      <Text style={styles.emptyTitle}>Nessuno studente collegato</Text>
+      <Text style={styles.emptyBody}>Apri le impostazioni tutor e scansiona il QR dello studente per iniziare.</Text>
+      <TouchableOpacity style={styles.primaryInlineBtn} onPress={() => navigation.navigate('TutorSettings')}>
+        <Text style={styles.primaryInlineBtnText}>Apri impostazioni</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderHomeTab = () => {
+    if (!selectedStudent || !studentStats) return renderEmpty();
+
+    return (
+      <>
+        <View style={styles.heroCard}>
+          <View style={[styles.heroTop, isCompact && styles.heroTopCompact]}>
+            <View>
+              <Text style={styles.heroEyebrow}>Studente selezionato</Text>
+              <Text style={[styles.heroTitle, isCompact && styles.heroTitleCompact]}>{selectedStudent.profile.full_name ?? 'Studente'}</Text>
+              <Text style={styles.heroUser}>@{selectedStudent.profile.username}</Text>
+            </View>
+            <View style={styles.statusPill}>
+              <Text style={styles.statusPillText}>{selectedStudent.paymentMode === 'fast' ? 'Modalita veloce' : 'Modalita precisa'}</Text>
+            </View>
+          </View>
+
+          <View style={styles.heroGrid}>
+            <KpiCard label="Saldo" value={formatEuro(getBalance(selectedStudent.wallet))} sub={`${selectedStudent.wallet.length} pezzi`} accent={t.colors.primary} cardStyle={singleColumnCard} />
+            <KpiCard label="SOS" value={`${studentStats.sosCount}`} sub="totali inviati" accent={studentStats.sosCount > 0 ? t.colors.error : t.colors.border} cardStyle={singleColumnCard} />
+            <KpiCard label="Pagamenti" value={`${studentStats.totalPayments}`} sub={formatEuro(studentStats.totalVolume)} accent={t.colors.success} cardStyle={singleColumnCard} />
+            <KpiCard label="Bypass" value={`${studentStats.bypassRate}%`} sub={`${studentStats.bypassCount} usi`} accent={studentStats.bypassCount > 0 ? t.colors.warning : t.colors.border} cardStyle={singleColumnCard} />
+          </View>
+        </View>
+
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recap generale</Text>
+            <Clock3 size={16} color={t.colors.textSecondary} />
+          </View>
+          <View style={styles.summaryList}>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Ultima attivita</Text>
+              <Text style={styles.summaryValue}>{latestLog ? logKindLabel(latestLog) : 'Nessuna'}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Ultimo importo gestito</Text>
+              <Text style={styles.summaryValue}>{latestLog && logAmount(latestLog) != null ? formatEuro(logAmount(latestLog) ?? 0) : '—'}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Banconote e monete</Text>
+              <Text style={styles.summaryValue}>{walletBreakdown.length} tagli distinti</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Pagamenti con bypass</Text>
+              <Text style={styles.summaryValue}>{studentStats.bypassCount}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Panoramica tutor</Text>
+            <Zap size={16} color={t.colors.primary} />
+          </View>
+          <View style={styles.overviewStrip}>
+            <KpiCard label="Studenti" value={`${students.length}`} cardStyle={singleColumnCard} />
+            <KpiCard label="Saldo totale" value={formatEuro(totalBalance)} cardStyle={singleColumnCard} />
+            <KpiCard label="Pagamenti" value={`${totalPayments}`} cardStyle={singleColumnCard} />
+            <KpiCard label="SOS" value={`${totalSos}`} accent={totalSos > 0 ? t.colors.error : t.colors.border} cardStyle={singleColumnCard} />
+          </View>
+        </View>
+      </>
+    );
+  };
+
+  const renderStatsTab = () => {
+    if (!selectedStudent || !studentStats) return renderEmpty();
+
+    return (
+      <>
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Statistiche di {selectedStudent.profile.full_name ?? 'studente'}</Text>
+            <BarChart3 size={17} color={t.colors.primary} />
+          </View>
+          <View style={styles.statsGrid}>
+            <KpiCard label="Pagamenti" value={`${studentStats.totalPayments}`} sub={`medio ${formatEuro(studentStats.avgPayment)}`} accent={t.colors.primary} cardStyle={singleColumnCard} />
+            <KpiCard label="Volume" value={formatEuro(studentStats.totalVolume)} sub="totale pagato" accent={t.colors.success} cardStyle={singleColumnCard} />
+            <KpiCard label="Bypass" value={`${studentStats.bypassCount}`} sub={`${studentStats.bypassRate}%`} accent={studentStats.bypassCount > 0 ? t.colors.warning : t.colors.border} cardStyle={singleColumnCard} />
+            <KpiCard label="SOS" value={`${studentStats.sosCount}`} sub="richieste aiuto" accent={studentStats.sosCount > 0 ? t.colors.error : t.colors.border} cardStyle={singleColumnCard} />
+          </View>
+        </View>
+
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Attivita ultimi 7 giorni</Text>
+            <Text style={styles.sectionMeta}>{recentLogs.length} eventi letti</Text>
+          </View>
+          <WeeklyBarChart bars={weeklyBars} />
+        </View>
+
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Dettaglio rapido</Text>
+          </View>
+          <View style={styles.summaryList}>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Ultimo pagamento</Text>
+              <Text style={styles.summaryValue}>
+                {selectedStudent.logs.find((log) => log.kind === 'payment')?.amount != null
+                  ? formatEuro(selectedStudent.logs.find((log) => log.kind === 'payment')?.amount ?? 0)
+                  : '—'}
+              </Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Copertura media</Text>
+              <Text style={styles.summaryValue}>
+                {studentStats.totalPayments > 0
+                  ? formatEuro(
+                      selectedStudent.logs
+                        .filter((log) => log.kind === 'payment')
+                        .reduce((sum, log) => sum + (log.covered_amount ?? log.amount ?? 0), 0) / studentStats.totalPayments,
+                    )
+                  : '—'}
+              </Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Modalita corrente</Text>
+              <Text style={styles.summaryValue}>{selectedStudent.paymentMode === 'fast' ? 'Veloce' : 'Precisa'}</Text>
+            </View>
+          </View>
+        </View>
+      </>
+    );
+  };
+
+  const renderStudentsTab = () => {
+    if (students.length === 0) return renderEmpty();
+
+    return (
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Studenti associati</Text>
+          <Text style={styles.sectionMeta}>{students.length} collegati</Text>
+        </View>
+        <View style={styles.studentList}>
+          {students.map((student) => {
+            const expanded = expandedStudentId === student.profile.id;
+            const stats = getStudentStats(student.logs);
+            return (
+              <View key={student.profile.id} style={styles.studentCard}>
+                <TouchableOpacity
+                  style={styles.studentCardHead}
+                  onPress={() => {
+                    setSelectedStudentId(student.profile.id);
+                    setExpandedStudentId(expanded ? null : student.profile.id);
+                  }}
+                >
+                  <View style={styles.studentCardText}>
+                    <Text style={styles.studentCardName}>{student.profile.full_name ?? 'Studente'}</Text>
+                    <Text style={styles.studentCardUser}>@{student.profile.username}</Text>
+                    <Text style={styles.studentCardMeta}>
+                      {formatEuro(getBalance(student.wallet))} · {stats.totalPayments} pagamenti · {stats.sosCount} SOS
+                    </Text>
+                  </View>
+                  {expanded ? <ChevronUp size={18} color={t.colors.textSecondary} /> : <ChevronDown size={18} color={t.colors.textSecondary} />}
+                </TouchableOpacity>
+
+                {expanded ? (
+                  <View style={styles.studentCardBody}>
+                    <Text style={styles.sliderLabel}>Modalita studente</Text>
+                    <View style={styles.modeRail}>
+                      <TouchableOpacity
+                        style={[styles.modeChip, student.paymentMode === 'exact' && styles.modeChipActive]}
+                        onPress={() => { updatePaymentMode(student, 'exact').catch(() => {}); }}
+                      >
+                        <Text style={[styles.modeChipText, student.paymentMode === 'exact' && styles.modeChipTextActive]}>Precisa</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.modeChip, student.paymentMode === 'fast' && styles.modeChipActive]}
+                        onPress={() => { updatePaymentMode(student, 'fast').catch(() => {}); }}
+                      >
+                        <Text style={[styles.modeChipText, student.paymentMode === 'fast' && styles.modeChipTextActive]}>Veloce</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.modeHint}>
+                      {student.paymentMode === 'fast'
+                        ? 'Priorita a banconote e monete alte. Lo studente puo usare anche "Paga meno".'
+                        : 'Cerca il pagamento corretto. Se manca il preciso, copre con la combinazione minima disponibile.'}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
+
+  const renderLogRow = (log: ActivityRow) => {
+    const expanded = expandedLogs[log.id] === true;
+    const breakdown = metadataItems(log.metadata);
+    const amount = logAmount(log);
+    const direction = metadataDirection(log.metadata);
+    const date = new Date(log.created_at);
+    const tagColor = log.kind === 'sos'
+      ? t.colors.error
+      : log.kind === 'payment' && log.used_bypass
+        ? t.colors.warning
+        : t.colors.primary;
+
+    return (
+      <View key={log.id} style={styles.logCard}>
+        <TouchableOpacity
+          style={styles.logHead}
+          onPress={() => setExpandedLogs((current) => ({ ...current, [log.id]: !expanded }))}
+        >
+          <View style={styles.logTitleWrap}>
+            <View style={[styles.logTag, { backgroundColor: tagColor }]}>
+              <Text style={styles.logTagText}>{logKindLabel(log)}</Text>
+            </View>
+            <Text style={styles.logMessage} numberOfLines={expanded ? undefined : 2}>{log.message}</Text>
+          </View>
+          <View style={styles.logRight}>
+            <Text style={styles.logAmount}>{amount != null ? formatEuro(amount) : '—'}</Text>
+            <Text style={styles.logDate}>{date.toLocaleDateString('it-IT')} · {date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}</Text>
+          </View>
+        </TouchableOpacity>
+
+        {expanded ? (
+          <View style={styles.logDetails}>
+            {log.kind === 'payment' ? (
+              <View style={styles.summaryList}>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Da pagare</Text>
+                  <Text style={styles.summaryValue}>{log.amount != null ? formatEuro(log.amount) : '—'}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Consegnato</Text>
+                  <Text style={styles.summaryValue}>{log.covered_amount != null ? formatEuro(log.covered_amount) : '—'}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Modalita</Text>
+                  <Text style={styles.summaryValue}>{log.used_bypass ? 'Veloce / paga meno' : 'Normale'}</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {log.kind === 'wallet_adjustment' ? (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Tipo</Text>
+                <Text style={styles.summaryValue}>{direction === 'remove' ? 'Rimozione' : 'Aggiunta'}</Text>
+              </View>
+            ) : null}
+
+            {breakdown.length > 0 ? (
+              <View style={styles.breakdownList}>
+                {breakdown.map((item) => (
+                  <View key={`${log.id}-${item.value}`} style={styles.breakdownRow}>
+                    <Text style={styles.breakdownLabel}>{formatEuro(item.value)}</Text>
+                    <Text style={styles.breakdownValue}>x{item.count}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
+  const renderWalletTab = () => {
+    if (!selectedStudent) return renderEmpty();
+
+    return (
+      <>
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Wallet attuale</Text>
+            <Text style={styles.sectionMeta}>{formatEuro(getBalance(selectedStudent.wallet))}</Text>
+          </View>
+          {walletBreakdown.length === 0 ? (
+            <Text style={styles.emptyInline}>Il wallet e vuoto.</Text>
+          ) : (
+            <View style={styles.walletPieces}>
+              {walletBreakdown.map((item) => (
+                <View key={item.value} style={[styles.walletPiece, walletPieceStyle]}>
+                  {item.value >= 5 ? <Banknote size={18} color={t.colors.primary} /> : <CircleDollarSign size={18} color={t.colors.primary} />}
+                  <Text style={styles.walletPieceValue}>{formatEuro(item.value)}</Text>
+                  <Text style={styles.walletPieceCount}>x{item.count}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Aggiungi pezzi</Text>
+            <Text style={styles.sectionMeta}>Carrello wallet</Text>
+          </View>
+          <View style={styles.editorList}>
+            {EDITOR_DENOMS.map((value) => {
+              const count = draftCounts[String(value)] ?? 0;
+              return (
+                <View key={value} style={styles.editorRow}>
+                  <View style={styles.editorLabelWrap}>
+                    {value >= 5 ? <Banknote size={17} color={t.colors.textSecondary} /> : <CircleDollarSign size={17} color={t.colors.textSecondary} />}
+                    <Text style={styles.editorLabel}>{formatEuro(value)}</Text>
+                  </View>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => changeDraft(value, -1)}>
+                      <Minus size={16} color={t.colors.text} />
+                    </TouchableOpacity>
+                    <Text style={styles.stepperCount}>{count}</Text>
+                    <TouchableOpacity style={[styles.stepperBtn, styles.stepperBtnPlus]} onPress={() => changeDraft(value, 1)}>
+                      <Plus size={16} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={styles.cartFooter}>
+            <View>
+              <Text style={styles.cartLabel}>Totale parziale</Text>
+              <Text style={styles.cartValue}>{formatEuro(draftTotal)}</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.cartButton, (draftEntries.length === 0 || walletBusy) && styles.cartButtonDisabled]}
+              onPress={() => { commitDraft().catch(() => {}); }}
+              disabled={draftEntries.length === 0 || walletBusy}
+            >
+              {walletBusy ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Plus size={18} color="#FFFFFF" />}
+              <Text style={styles.cartButtonText}>{walletBusy ? 'Aggiungo...' : 'Aggiungi'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Transazioni</Text>
+            <Text style={styles.sectionMeta}>{recentLogs.length} eventi</Text>
+          </View>
+          {recentLogs.length === 0 ? (
+            <Text style={styles.emptyInline}>Ancora nessuna transazione registrata.</Text>
+          ) : (
+            <View style={styles.logList}>
+              {recentLogs.map(renderLogRow)}
+            </View>
+          )}
+        </View>
+      </>
+    );
+  };
+
+  const tabTitle = activeTab === 'home'
+    ? 'Home'
+    : activeTab === 'stats'
+      ? 'Statistiche'
+      : activeTab === 'students'
+        ? 'Studenti'
+        : 'Wallet';
+
   return (
     <SafeAreaView style={styles.root}>
-      <View style={styles.topRail}>
-        <View style={styles.brandBlock}>
-          <Text style={styles.eyebrow}>PagUp Tutor</Text>
-          <Text style={styles.title}>Console</Text>
+      <View style={styles.topBar}>
+        <View>
+          <Text style={styles.appLabel}>PagUp Tutor</Text>
+          <Text style={styles.pageTitle}>{tabTitle}</Text>
         </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Settings')}>
-            <Settings size={23} color="#101713" />
+        <View style={styles.topActions}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => { loadDashboard().catch(() => {}); }}>
+            <RefreshCw size={18} color={t.colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.refreshButton} onPress={() => loadDashboard().catch(() => {})}>
-            <Eye size={18} color="#101713" />
-            <Text style={styles.refreshText}>Sync</Text>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('TutorSettings')}>
+            <Settings size={18} color={t.colors.text} />
           </TouchableOpacity>
         </View>
       </View>
 
       {loading ? (
         <View style={styles.loadingBox}>
-          <ActivityIndicator color="#101713" />
-          <Text style={styles.loadingText}>Carico studenti...</Text>
+          <ActivityIndicator color={t.colors.primary} />
+          <Text style={styles.loadingText}>Caricamento dati...</Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.metricsStrip}>
-            <Metric icon={<WalletCards size={20} color="#F7FFF8" />} label="Studenti" value={`${students.length}`} />
-            <Metric icon={<CircleDollarSign size={20} color="#F7FFF8" />} label="Saldo gestito" value={formatEuro(totalBalance)} />
-            <Metric icon={<ReceiptText size={20} color="#F7FFF8" />} label="Pagamenti" value={`${paymentCount}`} />
-            <Metric icon={<Plus size={20} color="#F7FFF8" />} label="Aggiunte" value={`${walletAddCount}`} />
-          </View>
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.studentTabs}>
-            {students.map((student) => {
-              const selected = selectedStudent?.profile.id === student.profile.id;
-              const recentPayment = student.logs.find((log) => log.kind === 'payment');
-              return (
-                <TouchableOpacity
-                  key={student.profile.id}
-                  style={[styles.studentTab, selected && styles.studentTabActive]}
-                  onPress={() => setSelectedStudentId(student.profile.id)}
-                >
-                  <Text style={[styles.studentTabName, selected && styles.studentTabNameActive]} numberOfLines={1}>
-                    {student.profile.full_name ?? 'Studente'}
-                  </Text>
-                  <Text style={[styles.studentTabBalance, selected && styles.studentTabBalanceActive]}>
-                    {formatEuro(getBalance(student.wallet))}
-                  </Text>
-                  <Text style={[styles.studentTabMeta, selected && styles.studentTabMetaActive]} numberOfLines={1}>
-                    {recentPayment ? `Ultimo pagamento ${formatEuro(recentPayment.amount ?? 0)}` : 'Nessun pagamento'}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+        <>
+          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            {activeTab === 'home' ? renderHomeTab() : null}
+            {activeTab === 'stats' ? renderStatsTab() : null}
+            {activeTab === 'students' ? renderStudentsTab() : null}
+            {activeTab === 'wallet' ? renderWalletTab() : null}
           </ScrollView>
 
-          {!selectedStudent ? (
-            <View style={styles.emptyPanel}>
-              <Text style={styles.emptyTitle}>Nessuno studente collegato</Text>
-              <Text style={styles.emptyText}>Usa il pairing dalle impostazioni per aggiungere il primo profilo.</Text>
-            </View>
-          ) : (
-            <>
-              <View style={styles.heroPanel}>
-                <View style={styles.heroCopy}>
-                  <Text style={styles.panelLabel}>Studente selezionato</Text>
-                  <Text style={styles.heroName} numberOfLines={1}>
-                    {selectedStudent.profile.full_name ?? 'Studente'}
-                  </Text>
-                  <Text style={styles.heroBalance}>{formatEuro(getBalance(selectedStudent.wallet))}</Text>
-                </View>
-                <View style={styles.heroBadge}>
-                  <WalletCards size={34} color="#101713" />
-                  <Text style={styles.heroBadgeText}>{selectedStudent.wallet.length} pezzi</Text>
-                </View>
-              </View>
-
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Wallet visivo</Text>
-                  <Text style={styles.sectionMeta}>Primi 12 pezzi</Text>
-                </View>
-                <MoneyVisualizer items={selectedStudent.wallet.slice(0, 12)} size="small" />
-              </View>
-
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Modifica rapida</Text>
-                  <Text style={styles.sectionMeta}>Aggiungi o rimuovi</Text>
-                </View>
-                <View style={styles.denomGrid}>
-                  {QUICK_DENOMS.map((value) => (
-                    <View key={value} style={styles.denomRow}>
-                      <View style={styles.denomLabel}>
-                        {value >= 5 ? <Banknote size={18} color="#2A3430" /> : <CircleDollarSign size={18} color="#2A3430" />}
-                        <Text style={styles.denomText}>{formatEuro(value)}</Text>
-                      </View>
-                      <View style={styles.denomActions}>
-                        <TouchableOpacity
-                          style={[styles.smallAction, styles.removeAction]}
-                          onPress={() => adjustWallet(selectedStudent, value, 'remove').catch(() => {})}
-                        >
-                          <Minus size={18} color="#9E2F32" />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.smallAction, styles.addAction]}
-                          onPress={() => adjustWallet(selectedStudent, value, 'add').catch(() => {})}
-                        >
-                          <Plus size={18} color="#0C5C43" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              </View>
-
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <View>
-                    <Text style={styles.sectionTitle}>Log attivita'</Text>
-                    <Text style={styles.sectionMeta}>Pagamenti e modifiche wallet in tempo reale</Text>
-                  </View>
-                  <Filter size={20} color="#56615B" />
-                </View>
-
-                <View style={styles.filterBar}>
-                  <FilterChip label="Tutto" active={logFilter === 'all'} onPress={() => setLogFilter('all')} />
-                  <FilterChip label="Aggiunte wallet" active={logFilter === 'wallet_add'} onPress={() => setLogFilter('wallet_add')} />
-                  <FilterChip label="Pagamenti" active={logFilter === 'payment'} onPress={() => setLogFilter('payment')} />
-                </View>
-
-                {selectedLogs.slice(0, 18).map((log) => (
-                  <ActivityItem key={log.id} log={log} />
-                ))}
-                {selectedLogs.length === 0 && (
-                  <Text style={styles.emptyText}>Nessuna attivita' per questo filtro.</Text>
-                )}
-              </View>
-            </>
-          )}
-        </ScrollView>
+          <View style={[styles.bottomBar, isNarrow && styles.bottomBarCompact]}>
+            <TouchableOpacity style={styles.bottomItem} onPress={() => setActiveTab('home')}>
+              <House size={20} color={activeTab === 'home' ? t.colors.primary : t.colors.textSecondary} />
+              <Text style={[styles.bottomLabel, isNarrow && styles.bottomLabelCompact, activeTab === 'home' && styles.bottomLabelActive]}>Home</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.bottomItem} onPress={() => setActiveTab('stats')}>
+              <BarChart3 size={20} color={activeTab === 'stats' ? t.colors.primary : t.colors.textSecondary} />
+              <Text style={[styles.bottomLabel, isNarrow && styles.bottomLabelCompact, activeTab === 'stats' && styles.bottomLabelActive]}>Statistiche</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.bottomItem} onPress={() => setActiveTab('students')}>
+              <UserRoundSearch size={20} color={activeTab === 'students' ? t.colors.primary : t.colors.textSecondary} />
+              <Text style={[styles.bottomLabel, isNarrow && styles.bottomLabelCompact, activeTab === 'students' && styles.bottomLabelActive]}>Studenti</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.bottomItem} onPress={() => setActiveTab('wallet')}>
+              <WalletCards size={20} color={activeTab === 'wallet' ? t.colors.primary : t.colors.textSecondary} />
+              <Text style={[styles.bottomLabel, isNarrow && styles.bottomLabelCompact, activeTab === 'wallet' && styles.bottomLabelActive]}>Wallet</Text>
+            </TouchableOpacity>
+          </View>
+        </>
       )}
     </SafeAreaView>
   );
 }
 
-function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <View style={styles.metric}>
-      <View style={styles.metricIcon}>{icon}</View>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-function FilterChip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={[styles.filterChip, active && styles.filterChipActive]} onPress={onPress}>
-      <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-function ActivityItem({ log }: { log: ActivityRow }) {
-  const tone = logTone(log);
-  const amountText = log.amount !== null ? formatEuro(log.amount) : null;
-
-  return (
-    <View style={styles.logRow}>
-      <View style={[styles.logMarker, styles[`logMarker_${tone}`]]}>
-        {log.kind === 'payment' ? (
-          <ReceiptText size={17} color="#FFFFFF" />
-        ) : log.kind === 'sos' ? (
-          <BellRing size={17} color="#FFFFFF" />
-        ) : (
-          <WalletCards size={17} color="#FFFFFF" />
-        )}
-      </View>
-      <View style={styles.logBody}>
-        <View style={styles.logTopLine}>
-          <Text style={styles.logKind}>{logLabel(log)}</Text>
-          {amountText ? <Text style={styles.logAmount}>{amountText}</Text> : null}
-        </View>
-        <Text style={styles.logMessage}>{log.message}</Text>
-        <View style={styles.logDateRow}>
-          <Clock3 size={12} color="#7A8580" />
-          <Text style={styles.logDate}>{new Date(log.created_at).toLocaleString('it-IT')}</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
+const gate = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: t.colors.background,
+    justifyContent: 'center',
+    padding: 24,
+  },
+  card: {
+    backgroundColor: t.colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: t.colors.border,
+    padding: 24,
+    gap: 12,
+  },
+  iconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: t.colors.surfaceVariant,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: t.colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  title: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: t.colors.text,
+  },
+  body: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: t.colors.textSecondary,
+  },
+  bioBtn: {
+    minHeight: 48,
+    borderRadius: 12,
+    backgroundColor: t.colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  bioBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginVertical: 2,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: t.colors.border,
+  },
+  dividerText: {
+    fontSize: 12,
+    color: t.colors.textDisabled,
+  },
+  pinInput: {
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: t.colors.border,
+    paddingHorizontal: 14,
+    backgroundColor: t.colors.background,
+    color: t.colors.text,
+  },
+  pinBtn: {
+    minHeight: 48,
+    borderRadius: 12,
+    backgroundColor: t.colors.surfaceVariant,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: t.colors.border,
+  },
+  pinBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: t.colors.text,
+  },
+});
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#E8ECE6',
+    backgroundColor: t.colors.background,
   },
-  gateRoot: {
-    flex: 1,
-    backgroundColor: '#0C1915',
-    justifyContent: 'center',
-    padding: 22,
-  },
-  gatePanel: {
-    borderRadius: 8,
-    backgroundColor: '#F5F2E8',
-    padding: 24,
-    borderWidth: 2,
-    borderColor: '#1D2A25',
-  },
-  gateMark: {
-    width: 70,
-    height: 70,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#D8C87A',
-    marginBottom: 18,
-  },
-  gateKicker: {
-    color: '#5C4C1F',
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-  },
-  gateTitle: {
-    marginTop: 4,
-    fontSize: 34,
-    fontWeight: '900',
-    color: '#0C1915',
-  },
-  gateText: {
-    marginTop: 8,
-    color: '#47534E',
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '700',
-  },
-  bioButton: {
-    marginTop: 22,
-    minHeight: 56,
-    borderRadius: 8,
-    backgroundColor: '#0C1915',
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-  },
-  bioButtonText: {
-    color: '#F7FFF8',
-    fontSize: 17,
-    fontWeight: '900',
-  },
-  pinInput: {
-    marginTop: 14,
-    minHeight: 54,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#C8CFC9',
-    paddingHorizontal: 14,
-    fontSize: 18,
-    color: '#0C1915',
-    backgroundColor: '#FFFFFF',
-  },
-  pinButton: {
-    marginTop: 10,
-    minHeight: 52,
-    borderRadius: 8,
-    backgroundColor: '#D8C87A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pinButtonText: {
-    color: '#0C1915',
-    fontSize: 17,
-    fontWeight: '900',
-  },
-  topRail: {
-    paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 12,
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#E8ECE6',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    backgroundColor: t.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: t.colors.border,
   },
-  brandBlock: {
-    flex: 1,
-  },
-  eyebrow: {
-    color: '#59655F',
-    fontSize: 12,
-    fontWeight: '900',
+  appLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: t.colors.textSecondary,
     textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
-  title: {
-    color: '#0C1915',
-    fontSize: 36,
-    lineHeight: 40,
-    fontWeight: '900',
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: t.colors.text,
   },
-  headerActions: {
+  topActions: {
     flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
   },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    backgroundColor: '#F7FFF8',
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: t.colors.border,
+    backgroundColor: t.colors.surfaceVariant,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#C9D1CB',
-  },
-  refreshButton: {
-    minHeight: 44,
-    borderRadius: 8,
-    backgroundColor: '#D8C87A',
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  refreshText: {
-    color: '#101713',
-    fontWeight: '900',
   },
   loadingBox: {
     flex: 1,
@@ -666,314 +1119,563 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   loadingText: {
-    color: '#4A5650',
-    fontWeight: '800',
+    fontSize: 14,
+    color: t.colors.textSecondary,
   },
   content: {
     padding: 14,
-    paddingBottom: 40,
+    paddingBottom: 110,
+    gap: 12,
+  },
+  heroCard: {
+    backgroundColor: '#1F3D90',
+    borderRadius: 16,
+    padding: 16,
     gap: 14,
   },
-  metricsStrip: {
+  heroTop: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  heroTopCompact: {
+    flexDirection: 'column',
+  },
+  heroEyebrow: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.72)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  heroTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  heroTitleCompact: {
+    fontSize: 24,
+    lineHeight: 30,
+  },
+  heroUser: {
+    marginTop: 4,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+  },
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  statusPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  heroGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
-  metric: {
-    flex: 1,
-    minHeight: 104,
-    borderRadius: 8,
-    backgroundColor: '#101713',
-    padding: 10,
-    justifyContent: 'space-between',
-  },
-  metricIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: '#20332B',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  metricLabel: {
-    color: '#A9B4AF',
-    fontSize: 11,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-  },
-  metricValue: {
-    color: '#F7FFF8',
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  studentTabs: {
-    gap: 10,
-    paddingRight: 14,
-  },
-  studentTab: {
-    width: 178,
-    minHeight: 104,
-    borderRadius: 8,
-    padding: 13,
-    backgroundColor: '#F7FFF8',
+  sectionCard: {
+    backgroundColor: t.colors.surface,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#C9D1CB',
-  },
-  studentTabActive: {
-    backgroundColor: '#0C5C43',
-    borderColor: '#0C5C43',
-  },
-  studentTabName: {
-    color: '#101713',
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  studentTabNameActive: {
-    color: '#FFFFFF',
-  },
-  studentTabBalance: {
-    marginTop: 8,
-    color: '#0C1915',
-    fontSize: 23,
-    fontWeight: '900',
-  },
-  studentTabBalanceActive: {
-    color: '#FFFFFF',
-  },
-  studentTabMeta: {
-    marginTop: 6,
-    color: '#66736D',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  studentTabMetaActive: {
-    color: '#CAEADB',
-  },
-  heroPanel: {
-    borderRadius: 8,
-    backgroundColor: '#F7FFF8',
-    borderWidth: 1,
-    borderColor: '#C9D1CB',
-    padding: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 14,
-  },
-  heroCopy: {
-    flex: 1,
-  },
-  panelLabel: {
-    color: '#66736D',
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-  },
-  heroName: {
-    marginTop: 6,
-    color: '#101713',
-    fontSize: 22,
-    fontWeight: '900',
-  },
-  heroBalance: {
-    marginTop: 2,
-    color: '#0C5C43',
-    fontSize: 42,
-    lineHeight: 48,
-    fontWeight: '900',
-  },
-  heroBadge: {
-    width: 92,
-    height: 92,
-    borderRadius: 8,
-    backgroundColor: '#D8C87A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  heroBadgeText: {
-    color: '#101713',
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-  },
-  section: {
-    borderRadius: 8,
-    backgroundColor: '#F7FFF8',
-    borderWidth: 1,
-    borderColor: '#C9D1CB',
+    borderColor: t.colors.border,
     padding: 14,
+    gap: 12,
   },
   sectionHeader: {
-    marginBottom: 12,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'space-between',
+    gap: 12,
   },
   sectionTitle: {
-    color: '#101713',
-    fontSize: 19,
-    fontWeight: '900',
+    flex: 1,
+    fontSize: 20,
+    fontWeight: '800',
+    color: t.colors.text,
   },
   sectionMeta: {
-    marginTop: 2,
-    color: '#66736D',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
+    color: t.colors.textSecondary,
   },
-  denomGrid: {
+  overviewStrip: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
-  denomRow: {
-    minHeight: 50,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: 8,
-    backgroundColor: '#EDF1EE',
-    paddingHorizontal: 12,
-  },
-  denomLabel: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  denomText: {
-    color: '#26322D',
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  denomActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  smallAction: {
-    width: 38,
-    height: 38,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  removeAction: {
-    backgroundColor: '#F5E2DF',
-    borderColor: '#E3B7B1',
-  },
-  addAction: {
-    backgroundColor: '#DDEFE6',
-    borderColor: '#B8D8C8',
-  },
-  filterBar: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 10,
-  },
-  filterChip: {
-    minHeight: 38,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EDF1EE',
-    borderWidth: 1,
-    borderColor: '#D6DDD8',
-  },
-  filterChipActive: {
-    backgroundColor: '#101713',
-    borderColor: '#101713',
-  },
-  filterChipText: {
-    color: '#3F4B45',
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  filterChipTextActive: {
-    color: '#F7FFF8',
-  },
-  logRow: {
-    flexDirection: 'row',
-    gap: 11,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E1E7E2',
-  },
-  logMarker: {
-    width: 38,
-    height: 38,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logMarker_green: {
-    backgroundColor: '#0C5C43',
-  },
-  logMarker_amber: {
-    backgroundColor: '#A77B14',
-  },
-  logMarker_red: {
-    backgroundColor: '#9E2F32',
-  },
-  logMarker_blue: {
-    backgroundColor: '#245B90',
-  },
-  logBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  logTopLine: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  summaryList: {
     gap: 10,
   },
-  logKind: {
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  summaryLabel: {
     flex: 1,
-    color: '#101713',
-    fontSize: 13,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-  },
-  logAmount: {
-    color: '#0C5C43',
     fontSize: 14,
-    fontWeight: '900',
+    color: t.colors.textSecondary,
   },
-  logMessage: {
-    marginTop: 4,
-    color: '#2E3934',
+  summaryValue: {
     fontSize: 14,
-    lineHeight: 19,
     fontWeight: '700',
+    color: t.colors.text,
+    textAlign: 'right',
   },
-  logDateRow: {
+  kpiCard: {
+    minWidth: '48%',
+    flexGrow: 1,
+    backgroundColor: '#F7F9FD',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: t.colors.border,
+    padding: 12,
+    gap: 6,
+  },
+  kpiLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: t.colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  kpiValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: t.colors.text,
+  },
+  kpiSub: {
+    fontSize: 12,
+    color: t.colors.textSecondary,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chartWrap: {
+    gap: 10,
+  },
+  chartFrame: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    height: 150,
+  },
+  chartColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  chartTrack: {
+    width: '100%',
+    height: 112,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  chartBar: {
+    width: '70%',
+    borderRadius: 6,
+    overflow: 'hidden',
+    flexDirection: 'column-reverse',
+  },
+  chartSeg: {
+    width: '100%',
+  },
+  chartEmpty: {
+    width: '70%',
+    height: 4,
+    borderRadius: 4,
+    backgroundColor: t.colors.border,
+  },
+  chartDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: t.colors.error,
     marginTop: 6,
+  },
+  chartDotSpacer: {
+    height: 13,
+  },
+  chartLabel: {
+    marginTop: 4,
+    fontSize: 11,
+    fontWeight: '700',
+    color: t.colors.textSecondary,
+  },
+  chartCount: {
+    fontSize: 11,
+    color: t.colors.text,
+    minHeight: 14,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
   },
-  logDate: {
-    color: '#7A8580',
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendText: {
     fontSize: 12,
+    color: t.colors.textSecondary,
+  },
+  studentList: {
+    gap: 10,
+  },
+  studentCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: t.colors.border,
+    overflow: 'hidden',
+    backgroundColor: '#FBFCFF',
+  },
+  studentCardHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    gap: 12,
+  },
+  studentCardText: {
+    flex: 1,
+    gap: 4,
+  },
+  studentCardName: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: t.colors.text,
+  },
+  studentCardUser: {
+    fontSize: 13,
+    color: t.colors.textSecondary,
+  },
+  studentCardMeta: {
+    fontSize: 13,
+    color: t.colors.textSecondary,
+  },
+  studentCardBody: {
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: t.colors.border,
+  },
+  sliderLabel: {
+    marginTop: 12,
+    fontSize: 12,
+    fontWeight: '700',
+    color: t.colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  modeRail: {
+    flexDirection: 'row',
+    backgroundColor: t.colors.surfaceVariant,
+    borderRadius: 14,
+    padding: 4,
+    gap: 6,
+  },
+  modeChip: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeChipActive: {
+    backgroundColor: t.colors.primary,
+  },
+  modeChipText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: t.colors.textSecondary,
+  },
+  modeChipTextActive: {
+    color: '#FFFFFF',
+  },
+  modeHint: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: t.colors.textSecondary,
+  },
+  walletPieces: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  walletPiece: {
+    minWidth: '31%',
+    flexGrow: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: t.colors.border,
+    backgroundColor: '#F8FAFF',
+    padding: 12,
+    alignItems: 'center',
+    gap: 6,
+  },
+  walletPieceValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: t.colors.text,
+  },
+  walletPieceCount: {
+    fontSize: 13,
+    color: t.colors.textSecondary,
+  },
+  editorList: {
+    gap: 8,
+  },
+  editorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: t.colors.border,
+    backgroundColor: '#FBFCFF',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  editorLabelWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editorLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: t.colors.text,
+  },
+  stepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  stepperBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: t.colors.border,
+    backgroundColor: t.colors.surfaceVariant,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperBtnPlus: {
+    backgroundColor: t.colors.primary,
+    borderColor: t.colors.primary,
+  },
+  stepperCount: {
+    minWidth: 24,
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '800',
+    color: t.colors.text,
+  },
+  cartFooter: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  cartLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: t.colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  cartValue: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: t.colors.primary,
+  },
+  cartButton: {
+    minWidth: 132,
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: t.colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+  },
+  cartButtonDisabled: {
+    opacity: 0.6,
+  },
+  cartButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: '800',
   },
-  emptyPanel: {
-    borderRadius: 8,
-    backgroundColor: '#F7FFF8',
+  logList: {
+    gap: 8,
+  },
+  logCard: {
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#C9D1CB',
-    padding: 20,
+    borderColor: t.colors.border,
+    backgroundColor: '#FBFCFF',
+    overflow: 'hidden',
+  },
+  logHead: {
+    padding: 12,
+    gap: 10,
+  },
+  logTitleWrap: {
+    gap: 8,
+  },
+  logTag: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  logTagText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  logMessage: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: t.colors.text,
+  },
+  logRight: {
+    gap: 2,
+  },
+  logAmount: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: t.colors.text,
+  },
+  logDate: {
+    fontSize: 12,
+    color: t.colors.textSecondary,
+  },
+  logDetails: {
+    borderTopWidth: 1,
+    borderTopColor: t.colors.border,
+    padding: 12,
+    gap: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  breakdownList: {
+    gap: 8,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: t.colors.surfaceVariant,
+  },
+  breakdownLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: t.colors.text,
+  },
+  breakdownValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: t.colors.primary,
+  },
+  emptyCard: {
+    backgroundColor: t.colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: t.colors.border,
+    padding: 24,
+    alignItems: 'center',
+    gap: 10,
   },
   emptyTitle: {
-    color: '#101713',
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '800',
+    color: t.colors.text,
+  },
+  emptyBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: t.colors.textSecondary,
     textAlign: 'center',
   },
-  emptyText: {
-    color: '#66736D',
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: '800',
-    textAlign: 'center',
-    padding: 14,
+  emptyInline: {
+    fontSize: 14,
+    color: t.colors.textSecondary,
+  },
+  primaryInlineBtn: {
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: t.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryInlineBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  bottomBar: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 12,
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: t.colors.border,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    shadowColor: '#00133A',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  bottomBarCompact: {
+    left: 8,
+    right: 8,
+    bottom: 8,
+    paddingHorizontal: 2,
+  },
+  bottomItem: {
+    flex: 1,
+    minHeight: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  bottomLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: t.colors.textSecondary,
+  },
+  bottomLabelCompact: {
+    fontSize: 10,
+  },
+  bottomLabelActive: {
+    color: t.colors.primary,
   },
 });
