@@ -493,14 +493,13 @@ interface StepAmountProps {
   amount: string;
   onAmountChange: (amount: string) => void;
   onConfirm: () => void;
-  onBack: () => void;
 }
 
 type AutoFillSource = 'ocr' | 'voice' | null;
 
 type InputTab = 'keyboard' | 'camera' | 'voice';
 
-function StepAmount({ amount, onAmountChange, onConfirm, onBack }: StepAmountProps) {
+function StepAmount({ amount, onAmountChange, onConfirm }: StepAmountProps) {
   const [tab, setTab] = useState<InputTab>('keyboard');
   const [cameraVisible, setCameraVisible] = useState(false);
   const [autoFillSource, setAutoFillSource] = useState<AutoFillSource>(null);
@@ -668,8 +667,6 @@ function StepAmount({ amount, onAmountChange, onConfirm, onBack }: StepAmountPro
       exiting={SlideOutLeft.duration(280)}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        <BackButton onPress={onBack} />
-
         {/* Schermo importo */}
         <Animated.View
           style={[styles.amountDisplay, amountCardStyle]}
@@ -1251,8 +1248,16 @@ export default function PaymentWizard({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.root}>
-      {step !== 'confirm' && step !== 'instructions' ? (
+      {step === 'amount' ? (
         <View style={styles.headerRow}>
+          <TouchableOpacity
+            style={styles.headerIconBtn}
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel="Torna indietro"
+          >
+            <ArrowLeft size={24} color={t.colors.primary} />
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.sosButton, (!studentId || isSendingSos) && styles.sosButtonDisabled]}
             onPress={() => { handleSos().catch(() => {}); }}
@@ -1276,7 +1281,6 @@ export default function PaymentWizard({ navigation }: Props) {
           amount={amountStr}
           onAmountChange={setAmountStr}
           onConfirm={handleAmountConfirm}
-          onBack={() => navigation.goBack()}
         />
       )}
       {step === 'confirm' && (
@@ -1327,13 +1331,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: t.spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     borderBottomWidth: 1.5,
     borderBottomColor: '#E0E4EE',
   },
+  headerIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sosButton: {
-    position: 'absolute',
-    right: t.spacing.md,
     minHeight: t.spacing.touchTarget,
     paddingHorizontal: t.spacing.lg,
     borderRadius: t.radius.lg,

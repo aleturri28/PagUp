@@ -14,13 +14,13 @@ import {
 import { StackScreenProps } from '@react-navigation/stack';
 import { GraduationCap, LockKeyhole, Settings, Store, WalletCards, X } from 'lucide-react-native';
 import { RootStackParamList } from '../../navigation/types';
+import { supabase } from '../../api/supabase';
 import { useWalletStore } from '../../store/useWalletStore';
 import { formatEuro } from '../../utils/paymentLogic';
 import { studentTheme as t } from '../../theme';
 
 type Props = StackScreenProps<RootStackParamList, 'StudentHome'>;
 
-const TUTOR_PIN = process.env.EXPO_PUBLIC_TUTOR_PIN ?? '1234';
 const SETTINGS_HOLD_MS = 3000;
 
 export default function StudentHome({ navigation }: Props) {
@@ -28,7 +28,17 @@ export default function StudentHome({ navigation }: Props) {
   const balance = inventory.reduce((sum, item) => sum + item.value, 0);
   const [pinVisible, setPinVisible] = useState(false);
   const [pin, setPin] = useState('');
+  const [studentId, setStudentId] = useState<string | null>(null);
+  const [checkingPin, setCheckingPin] = useState(false);
   const settingsHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setStudentId(data.user?.id ?? null);
+    }).catch(() => {
+      setStudentId(null);
+    });
+  }, []);
 
   const clearSettingsHoldTimer = useCallback(() => {
     if (settingsHoldTimer.current) {
@@ -55,16 +65,51 @@ export default function StudentHome({ navigation }: Props) {
     setPinVisible(false);
   }, []);
 
-  const submitPin = useCallback(() => {
-    if (pin === TUTOR_PIN) {
-      closeSettingsGate();
-      navigation.navigate('Settings', { unlocked: true });
+  const submitPin = useCallback(async () => {
+    if (!studentId) {
+      Alert.alert('Profilo non disponibile', 'Riapri l’app e riprova.');
       return;
     }
 
-    Alert.alert('PIN errato', 'Inserisci il PIN del tutor associato a questa app.');
-    setPin('');
-  }, [closeSettingsGate, navigation, pin]);
+    setCheckingPin(true);
+    try {
+      const { data: links, error: linksError } = await supabase
+        .from('tutor_students')
+        .select('tutor_id')
+        .eq('student_id', studentId);
+
+      if (linksError) throw linksError;
+      const tutorIds = [...new Set((links ?? []).map((entry) => entry.tutor_id))];
+      if (tutorIds.length === 0) {
+        throw new Error('Nessun tutor associato a questo profilo.');
+      }
+
+      const { data: tutors, error: tutorsError } = await supabase
+        .from('profiles')
+        .select('id, tutor_pin')
+        .in('id', tutorIds);
+
+      if (tutorsError) throw tutorsError;
+      const availablePins = (tutors ?? []).map((tutor) => tutor.tutor_pin).filter((value): value is string => !!value);
+      if (availablePins.length === 0) {
+        throw new Error('Il tutor associato non ha ancora impostato un PIN.');
+      }
+      const hasMatch = availablePins.some((value) => value === pin);
+
+      if (!hasMatch) {
+        Alert.alert('PIN errato', 'Inserisci il PIN del tutor associato a questa app.');
+        setPin('');
+        return;
+      }
+
+      closeSettingsGate();
+      navigation.navigate('Settings', { unlocked: true });
+    } catch (error) {
+      Alert.alert('Accesso non riuscito', error instanceof Error ? error.message : 'Riprova.');
+    } finally {
+      setCheckingPin(false);
+    }
+  }, [closeSettingsGate, navigation, pin, studentId]);
 
   return (
     <SafeAreaView style={styles.root}>
@@ -149,15 +194,15 @@ export default function StudentHome({ navigation }: Props) {
               placeholderTextColor={t.colors.textDisabled}
               style={styles.pinInput}
               accessibilityLabel="PIN tutor"
-              onSubmitEditing={submitPin}
+              onSubmitEditing={() => { submitPin().catch(() => {}); }}
             />
             <TouchableOpacity
               style={styles.pinSubmit}
-              onPress={submitPin}
+              onPress={() => { submitPin().catch(() => {}); }}
               accessibilityRole="button"
               accessibilityLabel="Conferma PIN tutor"
             >
-              <Text style={styles.pinSubmitText}>Apri impostazioni</Text>
+              <Text style={styles.pinSubmitText}>{checkingPin ? 'Verifica...' : 'Apri impostazioni'}</Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>

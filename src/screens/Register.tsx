@@ -58,9 +58,20 @@ export default function Register({ navigation }: Props) {
       if (profile.role === 'student') {
         await syncWithSupabase(session.user.id);
       }
+      if (profile.role === 'tutor') {
+        navigation.reset({
+          index: 1,
+          routes: [
+            { name: 'TutorDashboard' },
+            { name: 'TutorSettings', params: { requirePinSetup: true } },
+          ],
+        });
+        return;
+      }
+
       Alert.alert(
         'Registrazione completata',
-        `Benvenuto in PagUp come ${profile.role === 'student' ? 'Studente' : 'Tutor'}!`,
+        'Benvenuto in PagUp come Studente.',
         [{ text: 'OK', onPress: () => navigation.reset({ index: 0, routes: [{ name: route }] }) }]
       );
     } catch (error) {

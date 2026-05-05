@@ -11,7 +11,6 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import * as LocalAuthentication from 'expo-local-authentication';
 import {
   Banknote,
   BarChart3,
@@ -24,7 +23,6 @@ import {
   Plus,
   RefreshCw,
   Settings,
-  ShieldCheck,
   UserRoundSearch,
   Users,
   WalletCards,
@@ -71,7 +69,6 @@ type BreakdownEntry = { value: number; count: number };
 type DraftCounts = Record<string, number>;
 
 const DAY_LABELS_IT = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
-const TUTOR_PIN = process.env.EXPO_PUBLIC_TUTOR_PIN ?? '1234';
 const EDITOR_DENOMS = EURO_DENOMINATIONS.filter((value) => value >= 0.1);
 
 function getDailyPayments(logs: ActivityRow[]): DailyBar[] {
@@ -196,83 +193,6 @@ function buildEmptyDraft(): DraftCounts {
   return Object.fromEntries(EDITOR_DENOMS.map((value) => [String(value), 0]));
 }
 
-function AccessGate({ onUnlock }: { onUnlock: () => void }) {
-  const [pin, setPin] = useState('');
-  const [checkingBio, setCheckingBio] = useState(false);
-
-  const unlockWithBiometry = useCallback(async () => {
-    setCheckingBio(true);
-    try {
-      const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const enrolled = await LocalAuthentication.isEnrolledAsync();
-      if (!hasHardware || !enrolled) {
-        Alert.alert('Biometria non disponibile', 'Usa il PIN tutor.');
-        return;
-      }
-
-      const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Sblocca Dashboard Tutor',
-        fallbackLabel: 'Usa PIN',
-      });
-
-      if (result.success) onUnlock();
-    } finally {
-      setCheckingBio(false);
-    }
-  }, [onUnlock]);
-
-  const submitPin = useCallback(() => {
-    if (pin === TUTOR_PIN) {
-      onUnlock();
-      return;
-    }
-    Alert.alert('PIN errato', 'Riprova o usa la biometria.');
-    setPin('');
-  }, [onUnlock, pin]);
-
-  return (
-    <SafeAreaView style={gate.root}>
-      <View style={gate.card}>
-        <View style={gate.iconWrap}>
-          <ShieldCheck size={32} color={t.colors.primary} />
-        </View>
-        <Text style={gate.eyebrow}>Area riservata</Text>
-        <Text style={gate.title}>Console Tutor</Text>
-        <Text style={gate.body}>Controllo wallet, statistiche e log attivita degli studenti collegati.</Text>
-
-        <TouchableOpacity
-          style={gate.bioBtn}
-          onPress={() => { unlockWithBiometry().catch(() => {}); }}
-          disabled={checkingBio}
-        >
-          {checkingBio ? <ActivityIndicator color="#FFFFFF" size="small" /> : <ShieldCheck size={18} color="#FFFFFF" />}
-          <Text style={gate.bioBtnText}>{checkingBio ? 'Verifica...' : 'Sblocca con biometria'}</Text>
-        </TouchableOpacity>
-
-        <View style={gate.divider}>
-          <View style={gate.dividerLine} />
-          <Text style={gate.dividerText}>oppure</Text>
-          <View style={gate.dividerLine} />
-        </View>
-
-        <TextInput
-          value={pin}
-          onChangeText={setPin}
-          keyboardType="number-pad"
-          secureTextEntry
-          maxLength={8}
-          placeholder="PIN tutor"
-          placeholderTextColor={t.colors.textDisabled}
-          style={gate.pinInput}
-        />
-        <TouchableOpacity style={gate.pinBtn} onPress={submitPin}>
-          <Text style={gate.pinBtnText}>Entra</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
-  );
-}
-
 function KpiCard({ label, value, sub, accent, cardStyle }: { label: string; value: string; sub?: string; accent?: string; cardStyle?: object }) {
   return (
     <View style={[styles.kpiCard, cardStyle, accent ? { borderColor: accent } : null]}>
@@ -332,7 +252,6 @@ function WeeklyBarChart({ bars }: { bars: DailyBar[] }) {
 
 export default function TutorDashboard({ navigation }: Props) {
   const { width } = useWindowDimensions();
-  const [unlocked, setUnlocked] = useState(false);
   const [tutorId, setTutorId] = useState<string | null>(null);
   const [students, setStudents] = useState<StudentState[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -442,11 +361,11 @@ export default function TutorDashboard({ navigation }: Props) {
   }, []);
 
   useEffect(() => {
-    if (unlocked) loadDashboard().catch(() => {});
-  }, [loadDashboard, unlocked]);
+    loadDashboard().catch(() => {});
+  }, [loadDashboard]);
 
   useEffect(() => {
-    if (!unlocked || !tutorId) return;
+    if (!tutorId) return;
 
     const channel = supabase
       .channel(`tutor-dashboard:${tutorId}`)
@@ -469,7 +388,7 @@ export default function TutorDashboard({ navigation }: Props) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [tutorId, unlocked]);
+  }, [tutorId]);
 
   useEffect(() => {
     setDraftCounts(buildEmptyDraft());
@@ -548,10 +467,6 @@ export default function TutorDashboard({ navigation }: Props) {
       setWalletBusy(false);
     }
   }, [draftEntries, draftTotal, loadDashboard, selectedStudent, tutorId]);
-
-  if (!unlocked) {
-    return <AccessGate onUnlock={() => setUnlocked(true)} />;
-  }
 
   const renderEmpty = () => (
     <View style={styles.emptyCard}>
@@ -975,101 +890,6 @@ export default function TutorDashboard({ navigation }: Props) {
     </SafeAreaView>
   );
 }
-
-const gate = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: t.colors.background,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  card: {
-    backgroundColor: t.colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: t.colors.border,
-    padding: 24,
-    gap: 12,
-  },
-  iconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
-    backgroundColor: t.colors.surfaceVariant,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  eyebrow: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: t.colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: t.colors.text,
-  },
-  body: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: t.colors.textSecondary,
-  },
-  bioBtn: {
-    minHeight: 48,
-    borderRadius: 12,
-    backgroundColor: t.colors.primary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  bioBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginVertical: 2,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: t.colors.border,
-  },
-  dividerText: {
-    fontSize: 12,
-    color: t.colors.textDisabled,
-  },
-  pinInput: {
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: t.colors.border,
-    paddingHorizontal: 14,
-    backgroundColor: t.colors.background,
-    color: t.colors.text,
-  },
-  pinBtn: {
-    minHeight: 48,
-    borderRadius: 12,
-    backgroundColor: t.colors.surfaceVariant,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: t.colors.border,
-  },
-  pinBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: t.colors.text,
-  },
-});
 
 const styles = StyleSheet.create({
   root: {

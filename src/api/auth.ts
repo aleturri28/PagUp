@@ -10,6 +10,7 @@ export interface Profile {
   role: UserRole;
   fullName: string | null;
   username: string;
+  tutorPin: string | null;
   avatarUrl: string | null;
 }
 
@@ -24,7 +25,7 @@ export async function getCurrentSession(): Promise<Session | null> {
 export async function getProfile(userId: string): Promise<Profile> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, role, full_name, username, avatar_url')
+    .select('id, role, full_name, username, tutor_pin, avatar_url')
     .eq('id', userId)
     .single();
 
@@ -37,6 +38,7 @@ export async function getProfile(userId: string): Promise<Profile> {
     role: data.role,
     fullName: data.full_name,
     username: data.username,
+    tutorPin: data.tutor_pin,
     avatarUrl: data.avatar_url,
   };
 }
@@ -115,4 +117,14 @@ export async function signOut(): Promise<void> {
   if (error) {
     throw error;
   }
+}
+
+export async function updateTutorPin(userId: string, nextPin: string): Promise<void> {
+  const { error } = await supabase
+    .from('profiles')
+    .update({ tutor_pin: nextPin })
+    .eq('id', userId)
+    .eq('role', 'tutor');
+
+  if (error) throw error;
 }

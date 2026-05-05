@@ -1,19 +1,21 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   SafeAreaView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StackScreenProps } from '@react-navigation/stack';
-import { ArrowLeft, Camera, LogOut, ScanLine, ShieldCheck, X } from 'lucide-react-native';
+import { ArrowLeft, Camera, KeyRound, LogOut, ScanLine, ShieldCheck, X } from 'lucide-react-native';
 import { RootStackParamList } from '../../navigation/types';
-import { getProfile, signOut } from '../../api/auth';
+import { getProfile, signOut, updateTutorPin } from '../../api/auth';
 import { supabase } from '../../api/supabase';
 import { useWalletStore } from '../../store/useWalletStore';
 
@@ -48,19 +50,27 @@ function parsePairingPayload(raw: string): PairingPayload | null {
   return null;
 }
 
-export default function TutorSettings({ navigation }: Props) {
+export default function TutorSettings({ navigation, route }: Props) {
   const { width } = useWindowDimensions();
   const stopSync = useWalletStore((s) => s.stopSync);
   const [loading, setLoading] = useState(false);
   const [pairingBusy, setPairingBusy] = useState(false);
+  const [pinBusy, setPinBusy] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [profileUsername, setProfileUsername] = useState('');
+  const [currentTutorPin, setCurrentTutorPin] = useState<string | null>(null);
   const [scannerVisible, setScannerVisible] = useState(false);
   const [scanLocked, setScanLocked] = useState(false);
+  const [pinModalVisible, setPinModalVisible] = useState(false);
+  const [oldPin, setOldPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [tutorId, setTutorId] = useState<string | null>(null);
-  const isCompact = width < 390;
+  const compact = width < 390;
   const scanFrameSize = Math.max(200, Math.min(width - 72, 260));
+  const requiresInitialPinSetup = route.params?.requirePinSetup === true;
+  const hasExistingPin = !!currentTutorPin;
 
   useEffect(() => {
     let mounted = true;
@@ -73,6 +83,11 @@ export default function TutorSettings({ navigation }: Props) {
       setTutorId(data.user.id);
       setProfileName(profile.fullName ?? 'Tutor');
       setProfileUsername(profile.username);
+      setCurrentTutorPin(profile.tutorPin);
+
+      if (requiresInitialPinSetup || !profile.tutorPin) {
+        setPinModalVisible(true);
+      }
     }
 
     loadProfile().catch((error) => {
@@ -82,7 +97,21 @@ export default function TutorSettings({ navigation }: Props) {
     return () => {
       mounted = false;
     };
+  }, [requiresInitialPinSetup]);
+
+  const resetPinForm = useCallback(() => {
+    setOldPin('');
+    setNewPin('');
+    setConfirmPin('');
   }, []);
+
+  const closePinModal = useCallback(() => {
+    if (requiresInitialPinSetup && !currentTutorPin) {
+      return;
+    }
+    setPinModalVisible(false);
+    resetPinForm();
+  }, [currentTutorPin, requiresInitialPinSetup, resetPinForm]);
 
   const openScanner = useCallback(async () => {
     if (!cameraPermission?.granted) {
@@ -139,6 +168,35 @@ export default function TutorSettings({ navigation }: Props) {
     pairStudent(payload.studentId).catch(() => {});
   }, [pairStudent, pairingBusy, scanLocked]);
 
+  const handleSavePin = useCallback(async () => {
+    if (!tutorId) return;
+    if (hasExistingPin && oldPin !== currentTutorPin) {
+      Alert.alert('PIN attuale errato', 'Inserisci il PIN tutor attuale per modificarlo.');
+      return;
+    }
+    if (!/^\d{4,8}$/.test(newPin)) {
+      Alert.alert('PIN non valido', 'Usa un PIN numerico da 4 a 8 cifre.');
+      return;
+    }
+    if (newPin !== confirmPin) {
+      Alert.alert('PIN non coincidenti', 'Il nuovo PIN e la conferma devono coincidere.');
+      return;
+    }
+
+    setPinBusy(true);
+    try {
+      await updateTutorPin(tutorId, newPin);
+      setCurrentTutorPin(newPin);
+      setPinModalVisible(false);
+      resetPinForm();
+      Alert.alert('PIN aggiornato', hasExistingPin ? 'Il PIN tutor è stato modificato.' : 'Il PIN tutor è stato impostato.');
+    } catch (error) {
+      Alert.alert('PIN non salvato', error instanceof Error ? error.message : 'Riprova.');
+    } finally {
+      setPinBusy(false);
+    }
+  }, [confirmPin, currentTutorPin, hasExistingPin, newPin, oldPin, resetPinForm, tutorId]);
+
   const handleLogout = useCallback(() => {
     Alert.alert('Esci', 'Vuoi uscire dall’account tutor?', [
       { text: 'Annulla', style: 'cancel' },
@@ -161,6 +219,21 @@ export default function TutorSettings({ navigation }: Props) {
     ]);
   }, [navigation, stopSync]);
 
+  const pinCardBody = useMemo(() => (
+    <>
+      <Text style={styles.cardTitle}>Gestisci PIN</Text>
+      <Text style={styles.cardBody}>
+        {currentTutorPin
+          ? 'Modifica il PIN che sblocca le impostazioni dello studente.'
+          : 'Imposta il PIN che verrà richiesto allo studente per aprire le impostazioni protette.'}
+      </Text>
+      <TouchableOpacity style={styles.secondaryBtn} onPress={() => setPinModalVisible(true)}>
+        <KeyRound size={18} color="#1F3C88" />
+        <Text style={styles.secondaryBtnText}>{currentTutorPin ? 'Modifica PIN' : 'Imposta PIN'}</Text>
+      </TouchableOpacity>
+    </>
+  ), [currentTutorPin]);
+
   return (
     <SafeAreaView style={styles.root}>
       <View style={styles.header}>
@@ -171,12 +244,12 @@ export default function TutorSettings({ navigation }: Props) {
         <View style={styles.iconSpacer} />
       </View>
 
-      <View style={[styles.content, isCompact && styles.contentCompact]}>
+      <View style={[styles.content, compact && styles.contentCompact]}>
         <View style={styles.hero}>
           <View style={styles.heroBadge}>
             <ShieldCheck size={22} color="#FFFFFF" />
           </View>
-          <Text style={[styles.heroName, isCompact && styles.heroNameCompact]}>{profileName}</Text>
+          <Text style={[styles.heroName, compact && styles.heroNameCompact]}>{profileName}</Text>
           <Text style={styles.heroUser}>@{profileUsername}</Text>
         </View>
 
@@ -189,18 +262,84 @@ export default function TutorSettings({ navigation }: Props) {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.card}>
+          {pinCardBody}
+        </View>
+
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} disabled={loading}>
           {loading ? <ActivityIndicator color="#FFFFFF" /> : <LogOut size={20} color="#FFFFFF" />}
           <Text style={styles.logoutText}>{loading ? 'Uscita...' : 'Esci dall’account'}</Text>
         </TouchableOpacity>
       </View>
 
+      <Modal visible={pinModalVisible} transparent animationType="fade" onRequestClose={closePinModal}>
+        <View style={styles.overlay}>
+          <View style={styles.pinModal}>
+            <View style={styles.pinModalTop}>
+              <View style={styles.pinBadge}>
+                <KeyRound size={18} color="#1F3C88" />
+              </View>
+              {!requiresInitialPinSetup || currentTutorPin ? (
+                <TouchableOpacity style={styles.closeBtn} onPress={closePinModal} accessibilityLabel="Chiudi">
+                  <X size={18} color="#1D2A43" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            <Text style={styles.pinTitle}>{currentTutorPin ? 'Modifica PIN tutor' : 'Imposta PIN tutor'}</Text>
+            <Text style={styles.pinText}>
+              {currentTutorPin
+                ? 'Per modificarlo inserisci prima il PIN attuale.'
+                : 'Questo PIN verrà chiesto allo studente per aprire le impostazioni protette.'}
+            </Text>
+
+            {currentTutorPin ? (
+              <TextInput
+                value={oldPin}
+                onChangeText={setOldPin}
+                keyboardType="number-pad"
+                secureTextEntry
+                maxLength={8}
+                placeholder="PIN attuale"
+                style={styles.pinInput}
+                placeholderTextColor="#8A93A6"
+              />
+            ) : null}
+
+            <TextInput
+              value={newPin}
+              onChangeText={setNewPin}
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={8}
+              placeholder="Nuovo PIN"
+              style={styles.pinInput}
+              placeholderTextColor="#8A93A6"
+            />
+            <TextInput
+              value={confirmPin}
+              onChangeText={setConfirmPin}
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={8}
+              placeholder="Conferma nuovo PIN"
+              style={styles.pinInput}
+              placeholderTextColor="#8A93A6"
+            />
+
+            <TouchableOpacity style={[styles.primaryBtn, pinBusy && styles.buttonDisabled]} onPress={() => { handleSavePin().catch(() => {}); }} disabled={pinBusy}>
+              {pinBusy ? <ActivityIndicator color="#FFFFFF" /> : <KeyRound size={18} color="#FFFFFF" />}
+              <Text style={styles.primaryBtnText}>{pinBusy ? 'Salvo...' : 'Salva PIN'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <ModalCamera
         visible={scannerVisible}
         pairingBusy={pairingBusy}
         scanLocked={scanLocked}
         scanFrameSize={scanFrameSize}
-        compact={isCompact}
+        compact={compact}
         onClose={() => setScannerVisible(false)}
         onBarcodeScanned={handleBarcodeScanned}
       />
@@ -317,6 +456,16 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   primaryBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  secondaryBtn: {
+    minHeight: 52,
+    borderRadius: 14,
+    backgroundColor: '#EEF3FA',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  secondaryBtnText: { color: '#1F3C88', fontSize: 15, fontWeight: '800' },
   logoutBtn: {
     minHeight: 54,
     borderRadius: 14,
@@ -328,6 +477,57 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
   },
   logoutText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  buttonDisabled: { opacity: 0.72 },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(8, 16, 31, 0.38)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  pinModal: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D8DFEC',
+    padding: 18,
+    gap: 12,
+  },
+  pinModalTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  pinBadge: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#EEF3FA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pinTitle: { fontSize: 24, fontWeight: '900', color: '#1D2A43' },
+  pinText: { fontSize: 14, lineHeight: 20, color: '#59657A' },
+  pinInput: {
+    minHeight: 54,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#D8DFEC',
+    backgroundColor: '#F8FAFE',
+    paddingHorizontal: 14,
+    color: '#1D2A43',
+    fontSize: 16,
+    fontWeight: '700',
+  },
   scannerRoot: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#05070B',
@@ -358,9 +558,6 @@ const styles = StyleSheet.create({
     gap: 18,
   },
   scanFrame: {
-    width: 240,
-    height: 240,
-    borderRadius: 24,
     borderWidth: 3,
     borderColor: '#FFFFFF',
     alignItems: 'center',

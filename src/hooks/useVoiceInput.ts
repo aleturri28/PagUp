@@ -469,7 +469,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
       setState((current) => ({
         ...current,
         isListening: false,
-        isProcessing: current.transcript.length > 0,
+        isProcessing: current.transcript.length > 0 && current.lastResult === null && current.error === null,
       }));
     } catch {
       setState((current) => ({
@@ -522,7 +522,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
         setState((current) => ({
           ...current,
           isListening: false,
-          isProcessing: current.transcript.length > 0,
+          isProcessing: current.transcript.length > 0 && current.lastResult === null && current.error === null,
         }));
       }),
     ];
