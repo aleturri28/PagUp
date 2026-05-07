@@ -25,6 +25,7 @@ const PAIRING_PREFIX = 'pagup-student:';
 export default function SettingsScreen({ navigation, route }: Props) {
   const { width } = useWindowDimensions();
   const stopSync = useWalletStore((s) => s.stopSync);
+  const isUnlocked = route.params?.unlocked === true;
   const [loading, setLoading] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
@@ -49,9 +50,9 @@ export default function SettingsScreen({ navigation, route }: Props) {
           return;
         }
 
-        if (route.params?.unlocked !== true) {
+        if (!isUnlocked) {
           Alert.alert('Accesso protetto', 'Le impostazioni studente si aprono solo dopo il controllo PIN del tutor.');
-          navigation.goBack();
+          navigation.replace('StudentHome');
           return;
         }
 
@@ -68,7 +69,7 @@ export default function SettingsScreen({ navigation, route }: Props) {
 
     loadStudent().catch(() => {});
     return () => { mounted = false; };
-  }, [navigation, route.params?.unlocked]);
+  }, [isUnlocked, navigation]);
 
   const pairingValue = useMemo(
     () => (userId ? `${PAIRING_PREFIX}${userId}` : ''),

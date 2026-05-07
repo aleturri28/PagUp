@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { MoneyItem } from '../../api/database.types';
 import { formatEuro } from '../../utils/paymentLogic';
+import { getMoneyImageUri } from '../../constants/moneyImages';
 
 // Colori ad altissimo contrasto (≥7:1 su sfondo bianco — WCAG AAA).
 // Ogni taglio ha un colore unico per distinguibilità cognitiva immediata.
@@ -49,6 +50,8 @@ export function MoneyChip({ item, size = 'medium' }: MoneyChipProps) {
   const isBill = item.type === 'bill';
   const chipStyle = SIZE_MAP[size];
   const a11yLabel = `${isBill ? 'Banconota' : 'Moneta'} da ${palette.name || formatEuro(item.value)}`;
+  const uri = item.imageUri || getMoneyImageUri(item.value);
+  const hasPhoto = !!uri;
 
   return (
     <View
@@ -57,13 +60,15 @@ export function MoneyChip({ item, size = 'medium' }: MoneyChipProps) {
       style={[
         styles.chip,
         isBill ? [styles.bill, chipStyle.bill] : [styles.coin, chipStyle.coin],
-        { backgroundColor: palette.bg, borderColor: palette.border },
+        hasPhoto
+          ? styles.photoChip
+          : { backgroundColor: palette.bg, borderColor: palette.border },
       ]}
     >
-      {item.imageUri ? (
+      {uri ? (
         <Image
-          source={{ uri: item.imageUri }}
-          style={isBill ? chipStyle.imageBill : chipStyle.imageCoin}
+          source={{ uri }}
+          style={isBill ? chipStyle.photoBill : chipStyle.photoCoin}
           resizeMode="contain"
           accessible={false}
         />
@@ -76,7 +81,7 @@ export function MoneyChip({ item, size = 'medium' }: MoneyChipProps) {
           {formatEuro(item.value)}
         </Text>
       )}
-      {isBill && (
+      {!hasPhoto && isBill && (
         <Text style={[styles.chipType, chipStyle.typeText, { color: palette.text }]}>
           BANCONOTA
         </Text>
@@ -137,6 +142,8 @@ const SIZE_MAP = {
     typeText:  { fontSize: 8 },
     imageBill: { width: 80, height: 46 },
     imageCoin: { width: 46, height: 46 },
+    photoBill: { width: 90, height: 56 },
+    photoCoin: { width: 56, height: 56 },
   },
   medium: {
     bill:      { width: 130, height: 80, borderRadius: 12, borderWidth: 3 } as ViewStyle,
@@ -145,6 +152,8 @@ const SIZE_MAP = {
     typeText:  { fontSize: 10 },
     imageBill: { width: 118, height: 68 },
     imageCoin: { width: 68, height: 68 },
+    photoBill: { width: 130, height: 80 },
+    photoCoin: { width: 80, height: 80 },
   },
   large: {
     bill:      { width: 170, height: 104, borderRadius: 16, borderWidth: 4 } as ViewStyle,
@@ -153,6 +162,8 @@ const SIZE_MAP = {
     typeText:  { fontSize: 11 },
     imageBill: { width: 154, height: 90 },
     imageCoin: { width: 90, height: 90 },
+    photoBill: { width: 170, height: 104 },
+    photoCoin: { width: 104, height: 104 },
   },
 };
 
@@ -176,11 +187,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  photoChip: {
+    backgroundColor: 'transparent',
+    borderColor: 'transparent',
+    borderWidth: 0,
+  },
   bill: {
     borderRadius: 12,
+    overflow: 'hidden',
   },
   coin: {
     borderRadius: 999,
+    overflow: 'hidden',
   },
   chipValue: {
     fontWeight: '900',

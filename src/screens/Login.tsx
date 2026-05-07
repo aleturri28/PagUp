@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -60,7 +61,7 @@ export default function Login({ navigation }: Props) {
               <Text style={styles.brandBadgeText}>PagUp</Text>
             </View>
             <View style={styles.heroIcon}>
-              <LockKeyhole size={compact ? 28 : 34} color="#FFFFFF" />
+              <Image source={require('../../assets/icon.png')} style={styles.heroLogo} resizeMode="contain" />
             </View>
             <Text style={[styles.title, compact && styles.titleCompact]}>Accedi al tuo spazio</Text>
             <Text style={styles.subtitle}>
@@ -176,6 +177,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  heroLogo: {
+    width: 42,
+    height: 42,
   },
   title: {
     fontSize: 34,

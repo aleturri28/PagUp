@@ -11,6 +11,7 @@ import {
 import { useWalletStore } from '../../store/useWalletStore';
 import { MoneyItem } from '../../api/database.types';
 import { formatEuro } from '../../utils/paymentLogic';
+import { getMoneyImageUri } from '../../constants/moneyImages';
 
 // Importo di test per il pulsante "Paga"
 const TEST_PAYMENT_AMOUNT = 12.5;
@@ -85,14 +86,14 @@ export default function WalletTest() {
   // Carica dati di test nell'inventory per poter testare l'algoritmo.
   const handleLoadTestData = useCallback(() => {
     const testItems: MoneyItem[] = [
-      { id: '1', value: 10.00, type: 'bill',  imageUri: '' },
-      { id: '2', value: 5.00,  type: 'bill',  imageUri: '' },
-      { id: '3', value: 2.00,  type: 'coin',  imageUri: '' },
-      { id: '4', value: 1.00,  type: 'coin',  imageUri: '' },
-      { id: '5', value: 0.50,  type: 'coin',  imageUri: '' },
-      { id: '6', value: 0.20,  type: 'coin',  imageUri: '' },
-      { id: '7', value: 0.20,  type: 'coin',  imageUri: '' },
-      { id: '8', value: 0.10,  type: 'coin',  imageUri: '' },
+      { id: '1', value: 10.00, type: 'bill',  imageUri: getMoneyImageUri(10) },
+      { id: '2', value: 5.00,  type: 'bill',  imageUri: getMoneyImageUri(5) },
+      { id: '3', value: 2.00,  type: 'coin',  imageUri: getMoneyImageUri(2) },
+      { id: '4', value: 1.00,  type: 'coin',  imageUri: getMoneyImageUri(1) },
+      { id: '5', value: 0.50,  type: 'coin',  imageUri: getMoneyImageUri(0.5) },
+      { id: '6', value: 0.20,  type: 'coin',  imageUri: getMoneyImageUri(0.2) },
+      { id: '7', value: 0.20,  type: 'coin',  imageUri: getMoneyImageUri(0.2) },
+      { id: '8', value: 0.10,  type: 'coin',  imageUri: getMoneyImageUri(0.1) },
     ];
     setInventory(testItems);
   }, [setInventory]);

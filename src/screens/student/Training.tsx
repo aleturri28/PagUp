@@ -2,16 +2,16 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, CheckCircle2, Minus, PartyPopper, Plus, RefreshCcw, Sparkles } from 'lucide-react-native';
+import { ArrowLeft, Banknote, CheckCircle2, CircleDollarSign, Minus, PartyPopper, Plus, RefreshCcw, Sparkles } from 'lucide-react-native';
 import { StackScreenProps } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
 import { MoneyChip } from '../../components/money/MoneyVisualizer';
 import { MoneyItem } from '../../api/database.types';
 import { EURO_DENOMINATIONS, formatEuro } from '../../utils/paymentLogic';
 import { studentTheme as t } from '../../theme';
+import { getMoneyImageUri } from '../../constants/moneyImages';
 
 type Props = StackScreenProps<RootStackParamList, 'Training'>;
-
 type CountMap = Record<string, number>;
 
 const TRAINING_DENOMS = EURO_DENOMINATIONS;
@@ -23,14 +23,14 @@ function makeTrainingItem(value: number): MoneyItem {
     id: `training-${value}`,
     value,
     type: value >= 5 ? 'bill' : 'coin',
-    imageUri: '',
+    imageUri: getMoneyImageUri(value),
   };
 }
 
 function createTarget(): number {
   const easyPool = [0.5, 1, 2, 5, 10, 20];
   const centPool = [0, 0.1, 0.2, 0.5, 0.7, 0.9];
-  const base = easyPool[Math.floor(Math.random() * easyPool.length)];
+  const base = easyPool[Math.floor(Math.random() * easyPool.length)] ?? 0;
   const extra = easyPool[Math.floor(Math.random() * easyPool.length)] ?? 0;
   const cents = centPool[Math.floor(Math.random() * centPool.length)] ?? 0;
   return round2(Math.min(50, base + extra + cents));
@@ -48,7 +48,7 @@ function buildSelectedItems(counts: CountMap): MoneyItem[] {
       id: `selected-${value}-${index}`,
       value,
       type: value >= 5 ? 'bill' : 'coin',
-      imageUri: '',
+      imageUri: getMoneyImageUri(value),
     })),
   );
 }
@@ -57,7 +57,7 @@ function hintFor(target: number, selectedTotal: number): string {
   const diff = round2(target - selectedTotal);
   if (diff === 0) return 'Perfetto: hai dato i soldi giusti.';
   if (diff > 0) return `Mancano ${formatEuro(diff)}. Aggiungi un taglio adatto.`;
-  return `Hai dato ${formatEuro(Math.abs(diff))} in più. Togli qualcosa.`;
+  return `Hai dato ${formatEuro(Math.abs(diff))} in piu. Togli qualcosa.`;
 }
 
 export default function Training({ navigation }: Props) {
@@ -71,9 +71,10 @@ export default function Training({ navigation }: Props) {
   const selectedItems = useMemo(() => buildSelectedItems(counts), [counts]);
   const remaining = round2(target - selectedTotal);
   const exact = remaining === 0;
+  const totalPieces = selectedItems.length;
 
   const celebrationStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + celebration.value * 0.12 }, { rotate: `${celebration.value * 2}deg` }],
+    transform: [{ scale: 1 + celebration.value * 0.08 }],
   }));
 
   const updateCount = useCallback((value: number, delta: 1 | -1) => {
@@ -90,7 +91,7 @@ export default function Training({ navigation }: Props) {
       }
       return next;
     });
-    Haptics.selectionAsync();
+    Haptics.selectionAsync().catch(() => {});
   }, []);
 
   const checkAnswer = useCallback(() => {
@@ -99,20 +100,20 @@ export default function Training({ navigation }: Props) {
       setFeedback('Perfetto! Hai pagato con i soldi giusti, senza resto.');
       celebration.value = 0;
       celebration.value = withSequence(withTiming(1, { duration: 180 }), withTiming(0, { duration: 420 }));
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       return;
     }
 
     setSuccess(false);
     setFeedback(hintFor(target, selectedTotal));
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
   }, [celebration, exact, selectedTotal, target]);
 
   const clearSelection = useCallback(() => {
     setCounts({});
     setSuccess(false);
     setFeedback('Selezione pulita. Riprova con calma.');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   }, []);
 
   const nextRound = useCallback(() => {
@@ -120,138 +121,133 @@ export default function Training({ navigation }: Props) {
     setCounts({});
     setSuccess(false);
     setFeedback('Nuova cifra: prepara i soldi giusti.');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   }, []);
 
   return (
     <SafeAreaView style={styles.root}>
-      {/* Barra in alto */}
       <View style={styles.topBar}>
         <TouchableOpacity
           style={styles.iconButton}
           onPress={() => navigation.goBack()}
           accessibilityRole="button"
           accessibilityLabel="Torna indietro"
-          accessibilityHint="Torna alla schermata precedente"
         >
-          <ArrowLeft size={26} color={t.colors.text} />
+          <ArrowLeft size={24} color={t.colors.text} />
         </TouchableOpacity>
+
         <View style={styles.topCopy}>
           <Text style={styles.kicker}>Allenamento</Text>
           <Text style={styles.topTitle}>Metti i soldi giusti</Text>
         </View>
+
         <TouchableOpacity
           style={styles.iconButton}
           onPress={nextRound}
           accessibilityRole="button"
           accessibilityLabel="Nuova cifra"
-          accessibilityHint="Genera una nuova cifra casuale da pagare"
         >
-          <RefreshCcw size={24} color={t.colors.text} />
+          <RefreshCcw size={22} color={t.colors.text} />
         </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Importo target */}
-        <Animated.View
-          style={[styles.challenge, success && styles.challengeSuccess, celebrationStyle]}
-          accessible
-          accessibilityLabel={`Devi pagare ${formatEuro(target)}`}
-          accessibilityHint="Mostra la cifra che devi pagare in questo esercizio"
-        >
-          <View style={styles.challengeIcon}>
-            {success
-              ? <CheckCircle2 size={40} color="#FFFFFF" />
-              : <Sparkles size={40} color="#FFFFFF" />
-            }
+        <Animated.View style={[styles.heroCard, success && styles.heroCardSuccess, celebrationStyle]}>
+          <View style={styles.heroTop}>
+            <View style={styles.heroBadge}>
+              {success
+                ? <CheckCircle2 size={24} color={t.colors.onSuccess} />
+                : <Sparkles size={24} color={t.colors.onPrimary} />}
+            </View>
+            <View style={styles.heroCopy}>
+              <Text style={styles.heroEyebrow}>Importo da comporre</Text>
+              <Text style={styles.heroAmount}>{formatEuro(target)}</Text>
+            </View>
           </View>
-          <Text style={styles.challengeLabel}>Devi pagare</Text>
-          <Text style={styles.challengeAmount}>{formatEuro(target)}</Text>
+          <Text style={styles.heroBody}>
+            {success
+              ? 'Cifra completata correttamente. Puoi passare subito al prossimo esercizio.'
+              : 'Usa la cassa di prova qui sotto e cerca di arrivare al totale esatto senza resto.'}
+          </Text>
         </Animated.View>
 
-        {/* Pannello stato */}
-        <View style={styles.statusGrid}>
-          <View
-            style={styles.statusPanel}
-            accessible
-            accessibilityLabel={`Hai dato ${formatEuro(selectedTotal)}`}
-            accessibilityHint="Mostra il totale dei tagli che hai selezionato"
-          >
-            <Text style={styles.statusLabel}>Hai dato</Text>
-            <Text style={styles.statusValue}>{formatEuro(selectedTotal)}</Text>
+        <View style={styles.statusRow}>
+          <View style={styles.metricCard}>
+            <Text style={styles.metricLabel}>Hai messo</Text>
+            <Text style={styles.metricValue}>{formatEuro(selectedTotal)}</Text>
+            <Text style={styles.metricSub}>{totalPieces} pezzi sul banco</Text>
           </View>
           <View
             style={[
-              styles.statusPanel,
-              exact ? styles.statusExact : remaining < 0 ? styles.statusOver : null,
+              styles.metricCard,
+              exact ? styles.metricCardPositive : remaining < 0 ? styles.metricCardAlert : null,
             ]}
-            accessible
-            accessibilityLabel={
-              exact
-                ? 'Esatto!'
-                : remaining > 0
-                  ? `Mancano ${formatEuro(remaining)}`
-                  : `In più di ${formatEuro(Math.abs(remaining))}`
-            }
-            accessibilityHint="Mostra quanto manca o quanto è in più rispetto alla cifra giusta"
           >
-            <Text style={styles.statusLabel}>
-              {exact ? 'Esatto!' : remaining > 0 ? 'Manca' : 'In più'}
+            <Text style={styles.metricLabel}>{exact ? 'Esatto' : remaining > 0 ? 'Manca' : 'In piu'}</Text>
+            <Text style={styles.metricValue}>{formatEuro(Math.abs(remaining))}</Text>
+            <Text style={styles.metricSub}>
+              {exact ? 'Nessun resto necessario' : remaining > 0 ? 'Devi aggiungere ancora' : 'Devi togliere qualcosa'}
             </Text>
-            <Text style={styles.statusValue}>{formatEuro(Math.abs(remaining))}</Text>
           </View>
         </View>
 
-        {/* Feedback di successo enorme */}
-        {success && (
-          <Animated.View entering={FadeIn.duration(200)} style={styles.successBanner}>
-            <CheckCircle2 size={64} color={t.colors.onSuccess} />
-            <Text style={styles.successBannerText}>Bravo! Soldi giusti!</Text>
-            <PartyPopper size={40} color={t.colors.onSuccess} />
+        {success ? (
+          <Animated.View entering={FadeIn.duration(180)} style={styles.successBanner}>
+            <CheckCircle2 size={28} color={t.colors.onSuccess} />
+            <Text style={styles.successBannerText}>Bravo, pagamento corretto.</Text>
+            <PartyPopper size={22} color={t.colors.onSuccess} />
+          </Animated.View>
+        ) : (
+          <Animated.View entering={FadeIn.duration(180)} style={styles.feedbackCard}>
+            <Text style={styles.feedbackTitle}>Suggerimento</Text>
+            <Text style={styles.feedbackText}>{feedback}</Text>
           </Animated.View>
         )}
 
-        {/* Cassa di prova */}
-        <View style={styles.section}>
+        <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
-            <View>
+            <View style={styles.sectionCopy}>
               <Text style={styles.sectionTitle}>Cassa di prova</Text>
-              <Text style={styles.sectionHint}>Questi tagli non toccano il portafoglio vero.</Text>
+              <Text style={styles.sectionHint}>Scegli i tagli da usare. Non modifichi il portafoglio reale.</Text>
             </View>
-            <Sparkles size={22} color={t.colors.error} />
+            <View style={styles.sectionIconWrap}>
+              <Banknote size={18} color={t.colors.primary} />
+            </View>
           </View>
 
-          <View style={styles.denomGrid}>
+          <View style={styles.denomList}>
             {TRAINING_DENOMS.map((value) => {
               const count = counts[keyFor(value)] ?? 0;
               const item = makeTrainingItem(value);
+
               return (
-                <View
-                  key={value}
-                  style={styles.denomRow}
-                >
-                  <MoneyChip item={item} size="small" />
-                  <Text style={styles.denomText}>{formatEuro(value)}</Text>
-                  <View style={styles.counter}>
+                <View key={value} style={styles.denomCard}>
+                  <View style={styles.denomInfo}>
+                    <MoneyChip item={item} size="small" />
+                    <View style={styles.denomCopy}>
+                      <Text style={styles.denomValue}>{formatEuro(value)}</Text>
+                      <Text style={styles.denomCaption}>{value >= 5 ? 'Banconota' : 'Moneta'}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.stepper}>
                     <TouchableOpacity
-                      style={[styles.counterButton, count === 0 && styles.counterButtonDisabled]}
+                      style={[styles.stepperButton, count === 0 && styles.stepperButtonDisabled]}
                       onPress={() => updateCount(value, -1)}
                       disabled={count === 0}
                       accessibilityRole="button"
-                      accessibilityLabel={`Togli una ${value >= 5 ? 'banconota' : 'moneta'} da ${formatEuro(value)}`}
-                      accessibilityHint="Riduce la quantità di questo taglio di 1"
+                      accessibilityLabel={`Togli ${formatEuro(value)}`}
                     >
-                      <Minus size={22} color={count === 0 ? t.colors.textDisabled : t.colors.error} />
+                      <Minus size={18} color={count === 0 ? t.colors.textDisabled : t.colors.text} />
                     </TouchableOpacity>
-                    <Text style={styles.countText} accessible accessibilityLabel={`${count}`} accessibilityHint="Quantità attualmente selezionata">{count}</Text>
+                    <Text style={styles.stepperCount}>{count}</Text>
                     <TouchableOpacity
-                      style={styles.counterButton}
+                      style={[styles.stepperButton, styles.stepperButtonPrimary]}
                       onPress={() => updateCount(value, 1)}
                       accessibilityRole="button"
-                      accessibilityLabel={`Aggiungi una ${value >= 5 ? 'banconota' : 'moneta'} da ${formatEuro(value)}`}
-                      accessibilityHint="Aumenta la quantità di questo taglio di 1"
+                      accessibilityLabel={`Aggiungi ${formatEuro(value)}`}
                     >
-                      <Plus size={22} color={t.colors.success} />
+                      <Plus size={18} color={t.colors.onPrimary} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -260,21 +256,19 @@ export default function Training({ navigation }: Props) {
           </View>
         </View>
 
-        {/* Sul banco */}
-        <View style={styles.section}>
+        <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
-            <View>
+            <View style={styles.sectionCopy}>
               <Text style={styles.sectionTitle}>Sul banco</Text>
-              <Text style={styles.sectionHint}>I tagli che hai scelto per pagare.</Text>
+              <Text style={styles.sectionHint}>Qui vedi i tagli selezionati per il pagamento di prova.</Text>
             </View>
             <TouchableOpacity
               style={styles.clearButton}
               onPress={clearSelection}
               accessibilityRole="button"
-              accessibilityLabel="Togli tutto dal banco"
-              accessibilityHint="Rimuove tutti i tagli selezionati e ricomincia"
+              accessibilityLabel="Pulisci selezione"
             >
-              <Text style={styles.clearButtonText}>Pulisci tutto</Text>
+              <Text style={styles.clearButtonText}>Pulisci</Text>
             </TouchableOpacity>
           </View>
 
@@ -285,38 +279,30 @@ export default function Training({ navigation }: Props) {
               ))}
             </View>
           ) : (
-            <View style={styles.emptyBench}>
-              <Text style={styles.emptyText}>Nessun taglio scelto ancora.</Text>
+            <View style={styles.emptyState}>
+              <CircleDollarSign size={22} color={t.colors.textSecondary} />
+              <Text style={styles.emptyTitle}>Nessun taglio selezionato</Text>
+              <Text style={styles.emptyBody}>Aggiungi monete o banconote dalla cassa di prova per iniziare.</Text>
             </View>
           )}
         </View>
 
-        {/* Messaggio suggerimento */}
-        {!success && (
-          <Animated.View entering={FadeIn.duration(180)} style={styles.feedbackBox}>
-            <Text style={styles.feedbackText}>{feedback}</Text>
-          </Animated.View>
-        )}
-
-        {/* Pulsanti azione */}
-        <View style={styles.bottomActions}>
+        <View style={styles.actionsRow}>
           <TouchableOpacity
             style={styles.secondaryButton}
             onPress={nextRound}
             accessibilityRole="button"
             accessibilityLabel="Nuova cifra da pagare"
-            accessibilityHint="Genera un nuovo esercizio con una cifra diversa"
           >
             <Text style={styles.secondaryButtonText}>Nuova cifra</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.checkButton}
+            style={styles.primaryButton}
             onPress={checkAnswer}
             accessibilityRole="button"
-            accessibilityLabel="Controlla se hai messo i soldi giusti"
-            accessibilityHint="Verifica se la cifra composta è esattamente quella richiesta"
+            accessibilityLabel="Controlla risultato"
           >
-            <Text style={styles.checkButtonText}>Controlla</Text>
+            <Text style={styles.primaryButtonText}>Controlla</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -327,303 +313,335 @@ export default function Training({ navigation }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#FFF8EE',
+    backgroundColor: t.colors.surface,
   },
   topBar: {
-    minHeight: 80,
-    paddingHorizontal: t.spacing.md,
+    minHeight: 72,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: t.spacing.sm,
-    borderBottomWidth: 3,
-    borderBottomColor: t.colors.text,
+    backgroundColor: t.colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: '#D8DFEC',
+    gap: 12,
   },
   iconButton: {
-    width: t.spacing.touchTarget,
-    height: t.spacing.touchTarget,
-    borderRadius: t.radius.md,
-    backgroundColor: t.colors.surface,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: '#EEF3FA',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: t.colors.text,
   },
   topCopy: {
     flex: 1,
     alignItems: 'center',
+    gap: 2,
   },
   kicker: {
-    color: t.colors.error,
-    fontSize: t.typography.sizeSM,
-    fontWeight: t.typography.weightBold,
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-  },
-  topTitle: {
-    color: t.colors.text,
-    fontSize: t.typography.sizeLG,
-    fontWeight: t.typography.weightBold,
-    textAlign: 'center',
-  },
-  content: {
-    padding: t.spacing.md,
-    paddingBottom: t.spacing.xxl,
-    gap: t.spacing.md,
-  },
-
-  // Importo target
-  challenge: {
-    borderRadius: t.radius.lg,
-    borderWidth: 3,
-    borderColor: t.colors.text,
-    backgroundColor: t.colors.text,
-    padding: t.spacing.lg,
-    alignItems: 'center',
-    gap: t.spacing.sm,
-  },
-  challengeSuccess: {
-    backgroundColor: t.colors.success,
-    borderColor: t.colors.success,
-  },
-  challengeIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: t.radius.lg,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  challengeLabel: {
-    fontSize: t.typography.sizeMD,
-    fontWeight: t.typography.weightBold,
-    color: t.colors.textInverse,
-  },
-  challengeAmount: {
-    fontSize: 64,
-    fontWeight: t.typography.weightBold,
-    color: '#FFE56B',
-    lineHeight: 72,
-  },
-
-  // Stato
-  statusGrid: {
-    flexDirection: 'row',
-    gap: t.spacing.sm,
-  },
-  statusPanel: {
-    flex: 1,
-    borderRadius: t.radius.md,
-    backgroundColor: t.colors.surface,
-    borderWidth: 3,
-    borderColor: t.colors.text,
-    padding: t.spacing.md,
-    gap: 4,
-  },
-  statusExact: {
-    backgroundColor: '#DDF4E7',
-    borderColor: t.colors.success,
-  },
-  statusOver: {
-    backgroundColor: '#F8E0DD',
-    borderColor: t.colors.error,
-  },
-  statusLabel: {
-    color: t.colors.textSecondary,
-    fontSize: t.typography.sizeSM,
-    fontWeight: t.typography.weightBold,
+    fontSize: 12,
+    fontWeight: '800',
+    color: t.colors.primary,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
-  statusValue: {
+  topTitle: {
+    fontSize: 22,
+    fontWeight: '800',
     color: t.colors.text,
-    fontSize: t.typography.sizeLG,
-    fontWeight: t.typography.weightBold,
+    textAlign: 'center',
   },
-
-  // Banner successo gigante
-  successBanner: {
-    borderRadius: t.radius.lg,
-    borderWidth: 3,
-    borderColor: t.colors.success,
+  content: {
+    padding: 16,
+    paddingBottom: 28,
+    gap: 14,
+  },
+  heroCard: {
+    borderRadius: 18,
+    backgroundColor: t.colors.primary,
+    padding: 18,
+    gap: 12,
+  },
+  heroCardSuccess: {
     backgroundColor: t.colors.success,
-    paddingVertical: t.spacing.xl,
-    paddingHorizontal: t.spacing.lg,
+  },
+  heroTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  heroBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  heroEyebrow: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.8)',
+  },
+  heroAmount: {
+    fontSize: 36,
+    lineHeight: 42,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  heroBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: 'rgba(255,255,255,0.88)',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  metricCard: {
+    flex: 1,
+    borderRadius: 18,
+    backgroundColor: t.colors.background,
+    borderWidth: 1,
+    borderColor: '#D8DFEC',
+    padding: 16,
+    gap: 6,
+  },
+  metricCardPositive: {
+    backgroundColor: '#EAF7EF',
+    borderColor: '#9FD1AE',
+  },
+  metricCardAlert: {
+    backgroundColor: '#FFF1F1',
+    borderColor: '#E6B0B0',
+  },
+  metricLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: t.colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  metricValue: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '900',
+    color: t.colors.text,
+  },
+  metricSub: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: t.colors.textSecondary,
+  },
+  successBanner: {
+    borderRadius: 18,
+    backgroundColor: t.colors.success,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: t.spacing.md,
+    gap: 10,
   },
   successBannerText: {
-    fontSize: t.typography.sizeXL,
-    fontWeight: t.typography.weightBold,
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '800',
     color: t.colors.onSuccess,
     textAlign: 'center',
-    flex: 1,
   },
-
-  // Sezioni
-  section: {
-    borderRadius: t.radius.md,
-    borderWidth: 3,
-    borderColor: t.colors.text,
-    backgroundColor: t.colors.surface,
-    padding: t.spacing.md,
-    gap: t.spacing.sm,
+  feedbackCard: {
+    borderRadius: 18,
+    backgroundColor: '#FFF6E8',
+    borderWidth: 1,
+    borderColor: '#E3C98C',
+    padding: 16,
+    gap: 6,
+  },
+  feedbackTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: t.colors.warning,
+    textTransform: 'uppercase',
+  },
+  feedbackText: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '600',
+    color: t.colors.text,
+  },
+  sectionCard: {
+    borderRadius: 18,
+    backgroundColor: t.colors.background,
+    borderWidth: 1,
+    borderColor: '#D8DFEC',
+    padding: 16,
+    gap: 12,
   },
   sectionHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'flex-start',
-    gap: t.spacing.sm,
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  sectionCopy: {
+    flex: 1,
+    gap: 4,
   },
   sectionTitle: {
+    fontSize: 20,
+    fontWeight: '800',
     color: t.colors.text,
-    fontSize: t.typography.sizeMD,
-    fontWeight: t.typography.weightBold,
   },
   sectionHint: {
+    fontSize: 14,
+    lineHeight: 20,
     color: t.colors.textSecondary,
-    fontSize: t.typography.sizeSM,
-    fontWeight: t.typography.weightMedium,
-    marginTop: 2,
   },
-
-  // Griglia denominazioni
-  denomGrid: {
-    gap: t.spacing.sm,
+  sectionIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#EEF3FA',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  denomRow: {
-    minHeight: t.spacing.touchTarget + 4,
-    borderRadius: t.radius.md,
-    backgroundColor: t.colors.surfaceVariant,
-    borderWidth: 2,
-    borderColor: t.colors.border,
+  denomList: {
+    gap: 10,
+  },
+  denomCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: t.spacing.sm,
-    gap: t.spacing.sm,
+    justifyContent: 'space-between',
+    gap: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#D8DFEC',
+    backgroundColor: '#FBFCFF',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  denomText: {
+  denomInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     flex: 1,
-    color: t.colors.text,
-    fontSize: t.typography.sizeMD,
-    fontWeight: t.typography.weightBold,
   },
-  counter: {
+  denomCopy: {
+    gap: 2,
+  },
+  denomValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: t.colors.text,
+  },
+  denomCaption: {
+    fontSize: 13,
+    color: t.colors.textSecondary,
+  },
+  stepper: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: t.spacing.sm,
+    gap: 8,
   },
-  counterButton: {
-    width: t.spacing.touchTarget,
-    height: t.spacing.touchTarget,
-    borderRadius: t.radius.md,
+  stepperButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D8DFEC',
     backgroundColor: t.colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: t.colors.text,
   },
-  counterButtonDisabled: {
-    opacity: 0.35,
+  stepperButtonPrimary: {
+    backgroundColor: t.colors.primary,
+    borderColor: t.colors.primary,
   },
-  countText: {
-    width: 36,
-    color: t.colors.text,
-    fontSize: t.typography.sizeMD,
-    fontWeight: t.typography.weightBold,
+  stepperButtonDisabled: {
+    opacity: 0.45,
+  },
+  stepperCount: {
+    minWidth: 24,
     textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '800',
+    color: t.colors.text,
   },
-
-  // Pulsante pulisci
   clearButton: {
-    minHeight: t.spacing.touchTarget,
-    borderRadius: t.radius.md,
-    paddingHorizontal: t.spacing.md,
+    minHeight: 40,
+    borderRadius: 12,
+    backgroundColor: '#EEF3FA',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: t.colors.text,
-    backgroundColor: t.colors.background,
+    paddingHorizontal: 14,
   },
   clearButtonText: {
+    fontSize: 14,
+    fontWeight: '800',
     color: t.colors.text,
-    fontSize: t.typography.sizeSM,
-    fontWeight: t.typography.weightBold,
   },
-
-  // Sul banco
   selectedGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: t.spacing.sm,
+    gap: 10,
   },
-  emptyBench: {
-    borderRadius: t.radius.md,
-    backgroundColor: t.colors.surfaceVariant,
-    padding: t.spacing.md,
+  emptyState: {
+    borderRadius: 14,
+    backgroundColor: '#F7F9FC',
+    borderWidth: 1,
+    borderColor: '#D8DFEC',
+    padding: 18,
     alignItems: 'center',
+    gap: 8,
   },
-  emptyText: {
-    color: t.colors.textSecondary,
-    fontSize: t.typography.sizeSM,
-    fontWeight: t.typography.weightMedium,
-    textAlign: 'center',
-  },
-
-  // Feedback suggerimento
-  feedbackBox: {
-    minHeight: 80,
-    borderRadius: t.radius.md,
-    borderWidth: 3,
-    borderColor: t.colors.warning,
-    backgroundColor: '#FFF3CD',
-    padding: t.spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  feedbackText: {
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '800',
     color: t.colors.text,
-    fontSize: t.typography.sizeMD,
-    fontWeight: t.typography.weightBold,
     textAlign: 'center',
-    lineHeight: t.typography.sizeMD * t.typography.lineHeightBody,
   },
-
-  // Pulsanti fondo
-  bottomActions: {
+  emptyBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: t.colors.textSecondary,
+    textAlign: 'center',
+  },
+  actionsRow: {
     flexDirection: 'row',
-    gap: t.spacing.sm,
+    gap: 12,
+    paddingTop: 2,
   },
   secondaryButton: {
     flex: 1,
-    minHeight: t.spacing.touchTarget,
-    borderRadius: t.radius.md,
-    backgroundColor: t.colors.surface,
-    borderWidth: 3,
-    borderColor: t.colors.text,
+    minHeight: 54,
+    borderRadius: 14,
+    backgroundColor: '#EEF3FA',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 16,
   },
   secondaryButtonText: {
+    fontSize: 16,
+    fontWeight: '800',
     color: t.colors.text,
-    fontSize: t.typography.sizeMD,
-    fontWeight: t.typography.weightBold,
   },
-  checkButton: {
-    flex: 1.5,
-    minHeight: t.spacing.touchTarget,
-    borderRadius: t.radius.md,
+  primaryButton: {
+    flex: 1.2,
+    minHeight: 54,
+    borderRadius: 14,
     backgroundColor: t.colors.primary,
-    borderWidth: 3,
-    borderColor: t.colors.primaryVariant,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 16,
   },
-  checkButtonText: {
+  primaryButtonText: {
+    fontSize: 16,
+    fontWeight: '800',
     color: t.colors.onPrimary,
-    fontSize: t.typography.sizeMD,
-    fontWeight: t.typography.weightBold,
   },
 });

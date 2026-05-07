@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -92,7 +93,7 @@ export default function Register({ navigation }: Props) {
       >
         <View style={styles.card}>
           <View style={styles.brandIcon}>
-            <UserPlus size={34} color="#0E3B2E" />
+            <Image source={require('../../assets/icon.png')} style={styles.brandLogo} resizeMode="contain" />
           </View>
           <Text style={styles.title}>Crea Account</Text>
           <Text style={styles.subtitle}>Scegli il tuo ruolo. Non potrà essere cambiato.</Text>
@@ -207,6 +208,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 18,
+  },
+  brandLogo: {
+    width: 42,
+    height: 42,
   },
   title: {
     fontSize: 38,

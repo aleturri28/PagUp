@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -26,6 +27,7 @@ import {
   UserRoundSearch,
   Users,
   WalletCards,
+  X,
   Zap,
 } from 'lucide-react-native';
 import { StackScreenProps } from '@react-navigation/stack';
@@ -34,12 +36,14 @@ import { Database, Json, MoneyItem } from '../../api/database.types';
 import { RootStackParamList } from '../../navigation/types';
 import { EURO_DENOMINATIONS, formatEuro, PaymentMode } from '../../utils/paymentLogic';
 import { tutorTheme as t } from '../../theme';
+import { getMoneyImageUri } from '../../constants/moneyImages';
 
 type Props = StackScreenProps<RootStackParamList, 'TutorDashboard'>;
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type WalletRow = Database['public']['Tables']['wallets']['Row'];
 type ActivityRow = Database['public']['Tables']['activity_logs']['Row'];
 type TutorTab = 'home' | 'stats' | 'students' | 'wallet';
+type LogFilter = 'all' | 'payment' | 'wallet_add' | 'wallet_remove';
 
 interface StudentState {
   profile: ProfileRow;
@@ -108,7 +112,7 @@ function makeMoneyItem(value: number): MoneyItem {
     id: `tutor-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     value,
     type: value >= 5 ? 'bill' : 'coin',
-    imageUri: '',
+    imageUri: getMoneyImageUri(value),
   };
 }
 
@@ -193,14 +197,18 @@ function buildEmptyDraft(): DraftCounts {
   return Object.fromEntries(EDITOR_DENOMS.map((value) => [String(value), 0]));
 }
 
-function KpiCard({ label, value, sub, accent, cardStyle }: { label: string; value: string; sub?: string; accent?: string; cardStyle?: object }) {
-  return (
+function KpiCard({ label, value, sub, accent, cardStyle, onPress }: { label: string; value: string; sub?: string; accent?: string; cardStyle?: object; onPress?: () => void }) {
+  const content = (
     <View style={[styles.kpiCard, cardStyle, accent ? { borderColor: accent } : null]}>
       <Text style={styles.kpiLabel}>{label}</Text>
       <Text style={styles.kpiValue} numberOfLines={1}>{value}</Text>
       {sub ? <Text style={styles.kpiSub}>{sub}</Text> : null}
     </View>
   );
+
+  if (!onPress) return content;
+
+  return <TouchableOpacity onPress={onPress} activeOpacity={0.85}>{content}</TouchableOpacity>;
 }
 
 function WeeklyBarChart({ bars }: { bars: DailyBar[] }) {
@@ -261,6 +269,8 @@ export default function TutorDashboard({ navigation }: Props) {
   const [draftCounts, setDraftCounts] = useState<DraftCounts>(buildEmptyDraft);
   const [walletBusy, setWalletBusy] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
+  const [logFilter, setLogFilter] = useState<LogFilter>('all');
+  const [sosHistoryVisible, setSosHistoryVisible] = useState(false);
 
   const selectedStudent = useMemo(
     () => students.find((student) => student.profile.id === selectedStudentId) ?? students[0] ?? null,
@@ -273,6 +283,19 @@ export default function TutorDashboard({ navigation }: Props) {
   const weeklyBars = useMemo(() => selectedStudent ? getDailyPayments(selectedStudent.logs) : [], [selectedStudent]);
   const walletBreakdown = useMemo(() => selectedStudent ? moneyBreakdown(selectedStudent.wallet) : [], [selectedStudent]);
   const recentLogs = useMemo(() => selectedStudent ? selectedStudent.logs.slice(0, 50) : [], [selectedStudent]);
+  const filteredLogs = useMemo(() => {
+    return recentLogs.filter((log) => {
+      if (logFilter === 'all') return true;
+      if (logFilter === 'payment') return log.kind === 'payment';
+      if (logFilter === 'wallet_add') return log.kind === 'wallet_adjustment' && metadataDirection(log.metadata) !== 'remove';
+      if (logFilter === 'wallet_remove') return log.kind === 'wallet_adjustment' && metadataDirection(log.metadata) === 'remove';
+      return true;
+    });
+  }, [logFilter, recentLogs]);
+  const sosLogs = useMemo(
+    () => selectedStudent ? selectedStudent.logs.filter((log) => log.kind === 'sos').slice(0, 50) : [],
+    [selectedStudent],
+  );
   const latestLog = recentLogs[0] ?? null;
   const totalPayments = useMemo(() => allLogs.filter((log) => log.kind === 'payment').length, [allLogs]);
   const totalSos = useMemo(() => allLogs.filter((log) => log.kind === 'sos').length, [allLogs]);
@@ -394,6 +417,11 @@ export default function TutorDashboard({ navigation }: Props) {
     setDraftCounts(buildEmptyDraft());
   }, [selectedStudentId]);
 
+  useEffect(() => {
+    setLogFilter('all');
+    setSosHistoryVisible(false);
+  }, [selectedStudentId]);
+
   const updatePaymentMode = useCallback(async (student: StudentState, paymentMode: PaymentMode) => {
     if (!tutorId || student.paymentMode === paymentMode) return;
 
@@ -468,6 +496,59 @@ export default function TutorDashboard({ navigation }: Props) {
     }
   }, [draftEntries, draftTotal, loadDashboard, selectedStudent, tutorId]);
 
+  const clearWallet = useCallback(() => {
+    if (!tutorId || !selectedStudent || selectedStudent.wallet.length === 0) return;
+
+    const removedItems = moneyBreakdown(selectedStudent.wallet);
+    const removedTotal = getBalance(selectedStudent.wallet);
+
+    Alert.alert(
+      'Azzera wallet',
+      `Vuoi rimuovere tutti i pezzi dal wallet di ${selectedStudent.profile.full_name ?? selectedStudent.profile.username}?`,
+      [
+        { text: 'Annulla', style: 'cancel' },
+        {
+          text: 'Azzera',
+          style: 'destructive',
+          onPress: async () => {
+            setWalletBusy(true);
+            try {
+              const { error: walletError } = await supabase
+                .from('wallets')
+                .upsert({ user_id: selectedStudent.profile.id, items: [] }, { onConflict: 'user_id' });
+
+              if (walletError) throw walletError;
+
+              const { error: logError } = await supabase.from('activity_logs').insert({
+                student_id: selectedStudent.profile.id,
+                tutor_id: tutorId,
+                kind: 'wallet_adjustment',
+                amount: removedTotal,
+                message: `Wallet azzerato per ${selectedStudent.profile.full_name ?? selectedStudent.profile.username}.`,
+                metadata: {
+                  direction: 'remove',
+                  total: removedTotal,
+                  items: removedItems,
+                } as Json,
+              });
+
+              if (logError) throw logError;
+
+              setStudents((current) => current.map((entry) => (
+                entry.profile.id === selectedStudent.profile.id ? { ...entry, wallet: [] } : entry
+              )));
+            } catch (error) {
+              Alert.alert('Wallet non aggiornato', error instanceof Error ? error.message : 'Riprova.');
+              loadDashboard().catch(() => {});
+            } finally {
+              setWalletBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [loadDashboard, selectedStudent, tutorId]);
+
   const renderEmpty = () => (
     <View style={styles.emptyCard}>
       <Users size={30} color={t.colors.textSecondary} />
@@ -486,13 +567,12 @@ export default function TutorDashboard({ navigation }: Props) {
       <>
         <View style={styles.heroCard}>
           <View style={[styles.heroTop, isCompact && styles.heroTopCompact]}>
-            <View>
+            <View style={styles.heroIdentity}>
               <Text style={styles.heroEyebrow}>Studente selezionato</Text>
-              <Text style={[styles.heroTitle, isCompact && styles.heroTitleCompact]}>{selectedStudent.profile.full_name ?? 'Studente'}</Text>
-              <Text style={styles.heroUser}>@{selectedStudent.profile.username}</Text>
-            </View>
-            <View style={styles.statusPill}>
-              <Text style={styles.statusPillText}>{selectedStudent.paymentMode === 'fast' ? 'Modalita veloce' : 'Modalita precisa'}</Text>
+              <Text style={[styles.heroTitle, isCompact && styles.heroTitleCompact]}>{selectedStudent.profile.username}</Text>
+              <View style={styles.statusPill}>
+                <Text style={styles.statusPillText}>{selectedStudent.paymentMode === 'fast' ? 'Modalita veloce' : 'Modalita precisa'}</Text>
+              </View>
             </View>
           </View>
 
@@ -559,7 +639,14 @@ export default function TutorDashboard({ navigation }: Props) {
             <KpiCard label="Pagamenti" value={`${studentStats.totalPayments}`} sub={`medio ${formatEuro(studentStats.avgPayment)}`} accent={t.colors.primary} cardStyle={singleColumnCard} />
             <KpiCard label="Volume" value={formatEuro(studentStats.totalVolume)} sub="totale pagato" accent={t.colors.success} cardStyle={singleColumnCard} />
             <KpiCard label="Bypass" value={`${studentStats.bypassCount}`} sub={`${studentStats.bypassRate}%`} accent={studentStats.bypassCount > 0 ? t.colors.warning : t.colors.border} cardStyle={singleColumnCard} />
-            <KpiCard label="SOS" value={`${studentStats.sosCount}`} sub="richieste aiuto" accent={studentStats.sosCount > 0 ? t.colors.error : t.colors.border} cardStyle={singleColumnCard} />
+            <KpiCard
+              label="SOS"
+              value={`${studentStats.sosCount}`}
+              sub="richieste aiuto"
+              accent={studentStats.sosCount > 0 ? t.colors.error : t.colors.border}
+              cardStyle={singleColumnCard}
+              onPress={() => setSosHistoryVisible(true)}
+            />
           </View>
         </View>
 
@@ -618,24 +705,31 @@ export default function TutorDashboard({ navigation }: Props) {
         <View style={styles.studentList}>
           {students.map((student) => {
             const expanded = expandedStudentId === student.profile.id;
+            const selected = selectedStudentId === student.profile.id;
             const stats = getStudentStats(student.logs);
             return (
               <View key={student.profile.id} style={styles.studentCard}>
                 <TouchableOpacity
-                  style={styles.studentCardHead}
-                  onPress={() => {
-                    setSelectedStudentId(student.profile.id);
-                    setExpandedStudentId(expanded ? null : student.profile.id);
-                  }}
+                  style={[styles.studentCardHead, selected && styles.studentCardHeadSelected]}
+                  onPress={() => { setSelectedStudentId(student.profile.id); }}
                 >
                   <View style={styles.studentCardText}>
-                    <Text style={styles.studentCardName}>{student.profile.full_name ?? 'Studente'}</Text>
-                    <Text style={styles.studentCardUser}>@{student.profile.username}</Text>
-                    <Text style={styles.studentCardMeta}>
+                    <Text style={[styles.studentCardName, selected && styles.studentCardNameSelected]}>{student.profile.full_name ?? 'Studente'}</Text>
+                    <Text style={[styles.studentCardUser, selected && styles.studentCardMetaSelected]}>@{student.profile.username}</Text>
+                    <Text style={[styles.studentCardMeta, selected && styles.studentCardMetaSelected]}>
                       {formatEuro(getBalance(student.wallet))} · {stats.totalPayments} pagamenti · {stats.sosCount} SOS
                     </Text>
                   </View>
-                  {expanded ? <ChevronUp size={18} color={t.colors.textSecondary} /> : <ChevronDown size={18} color={t.colors.textSecondary} />}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.studentCardChevron, selected && styles.studentCardChevronSelected]}
+                  onPress={() => { setExpandedStudentId(expanded ? null : student.profile.id); }}
+                  accessibilityRole="button"
+                  accessibilityLabel={expanded ? 'Chiudi dettagli studente' : 'Apri dettagli studente'}
+                >
+                  {expanded
+                    ? <ChevronUp size={18} color={selected ? '#FFFFFF' : t.colors.textSecondary} />
+                    : <ChevronDown size={18} color={selected ? '#FFFFFF' : t.colors.textSecondary} />}
                 </TouchableOpacity>
 
                 {expanded ? (
@@ -752,15 +846,29 @@ export default function TutorDashboard({ navigation }: Props) {
             <Text style={styles.sectionTitle}>Wallet attuale</Text>
             <Text style={styles.sectionMeta}>{formatEuro(getBalance(selectedStudent.wallet))}</Text>
           </View>
+          <TouchableOpacity
+            style={[styles.secondaryInlineBtn, (walletBreakdown.length === 0 || walletBusy) && styles.secondaryInlineBtnDisabled]}
+            onPress={clearWallet}
+            disabled={walletBreakdown.length === 0 || walletBusy}
+          >
+            {walletBusy ? <ActivityIndicator color={t.colors.error} size="small" /> : <RefreshCw size={16} color={t.colors.error} />}
+            <Text style={[styles.secondaryInlineBtnText, styles.secondaryInlineBtnTextDanger]}>
+              {walletBusy ? 'Azzero...' : 'Azzera wallet'}
+            </Text>
+          </TouchableOpacity>
           {walletBreakdown.length === 0 ? (
             <Text style={styles.emptyInline}>Il wallet e vuoto.</Text>
           ) : (
             <View style={styles.walletPieces}>
               {walletBreakdown.map((item) => (
                 <View key={item.value} style={[styles.walletPiece, walletPieceStyle]}>
-                  {item.value >= 5 ? <Banknote size={18} color={t.colors.primary} /> : <CircleDollarSign size={18} color={t.colors.primary} />}
-                  <Text style={styles.walletPieceValue}>{formatEuro(item.value)}</Text>
-                  <Text style={styles.walletPieceCount}>x{item.count}</Text>
+                  <View style={styles.walletPieceLabelWrap}>
+                    {item.value >= 5 ? <Banknote size={17} color={t.colors.textSecondary} /> : <CircleDollarSign size={17} color={t.colors.textSecondary} />}
+                    <Text style={styles.walletPieceValue}>{formatEuro(item.value)}</Text>
+                  </View>
+                  <View style={styles.walletPieceCountBadge}>
+                    <Text style={styles.walletPieceCount}>x{item.count}</Text>
+                  </View>
                 </View>
               ))}
             </View>
@@ -814,13 +922,41 @@ export default function TutorDashboard({ navigation }: Props) {
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Transazioni</Text>
-            <Text style={styles.sectionMeta}>{recentLogs.length} eventi</Text>
+            <Text style={styles.sectionMeta}>{filteredLogs.length} eventi</Text>
           </View>
-          {recentLogs.length === 0 ? (
+
+          <View style={styles.logFilterRow}>
+            <TouchableOpacity
+              style={[styles.logFilterChip, logFilter === 'all' && styles.logFilterChipActive]}
+              onPress={() => setLogFilter('all')}
+            >
+              <Text style={[styles.logFilterChipText, logFilter === 'all' && styles.logFilterChipTextActive]}>Tutte</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.logFilterChip, logFilter === 'payment' && styles.logFilterChipActive]}
+              onPress={() => setLogFilter('payment')}
+            >
+              <Text style={[styles.logFilterChipText, logFilter === 'payment' && styles.logFilterChipTextActive]}>Pagamenti</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.logFilterChip, logFilter === 'wallet_add' && styles.logFilterChipActive]}
+              onPress={() => setLogFilter('wallet_add')}
+            >
+              <Text style={[styles.logFilterChipText, logFilter === 'wallet_add' && styles.logFilterChipTextActive]}>Ricariche</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.logFilterChip, logFilter === 'wallet_remove' && styles.logFilterChipActive]}
+              onPress={() => setLogFilter('wallet_remove')}
+            >
+              <Text style={[styles.logFilterChipText, logFilter === 'wallet_remove' && styles.logFilterChipTextActive]}>Rimozioni</Text>
+            </TouchableOpacity>
+          </View>
+
+          {filteredLogs.length === 0 ? (
             <Text style={styles.emptyInline}>Ancora nessuna transazione registrata.</Text>
           ) : (
             <View style={styles.logList}>
-              {recentLogs.map(renderLogRow)}
+              {filteredLogs.map(renderLogRow)}
             </View>
           )}
         </View>
@@ -887,6 +1023,30 @@ export default function TutorDashboard({ navigation }: Props) {
           </View>
         </>
       )}
+
+      <Modal visible={sosHistoryVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSosHistoryVisible(false)}>
+        <SafeAreaView style={styles.sosModalRoot}>
+          <View style={styles.sosModalHeader}>
+            <View style={styles.sosModalTitleWrap}>
+              <Text style={styles.sosModalTitle}>Storico SOS</Text>
+              <Text style={styles.sosModalSubtitle}>{selectedStudent?.profile.username ?? 'studente'}</Text>
+            </View>
+            <TouchableOpacity style={styles.sosModalClose} onPress={() => setSosHistoryVisible(false)} accessibilityLabel="Chiudi storico SOS">
+              <X size={20} color={t.colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.sosModalContent}>
+            {sosLogs.length === 0 ? (
+              <Text style={styles.emptyInline}>Nessuna richiesta SOS registrata.</Text>
+            ) : (
+              <View style={styles.logList}>
+                {sosLogs.map(renderLogRow)}
+              </View>
+            )}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -942,6 +1102,44 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: t.colors.textSecondary,
   },
+  sosModalRoot: {
+    flex: 1,
+    backgroundColor: t.colors.background,
+  },
+  sosModalHeader: {
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: t.colors.border,
+    backgroundColor: t.colors.surface,
+  },
+  sosModalTitleWrap: {
+    gap: 2,
+  },
+  sosModalTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: t.colors.text,
+  },
+  sosModalSubtitle: {
+    fontSize: 14,
+    color: t.colors.textSecondary,
+  },
+  sosModalClose: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: '#EEF3FA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sosModalContent: {
+    padding: 16,
+    paddingBottom: 28,
+  },
   content: {
     padding: 14,
     paddingBottom: 110,
@@ -962,6 +1160,11 @@ const styles = StyleSheet.create({
   heroTopCompact: {
     flexDirection: 'column',
   },
+  heroIdentity: {
+    flexShrink: 1,
+    alignItems: 'flex-start',
+    gap: 6,
+  },
   heroEyebrow: {
     fontSize: 12,
     fontWeight: '700',
@@ -979,11 +1182,11 @@ const styles = StyleSheet.create({
     lineHeight: 30,
   },
   heroUser: {
-    marginTop: 4,
     fontSize: 14,
     color: 'rgba(255,255,255,0.8)',
   },
   statusPill: {
+    alignSelf: 'flex-start',
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -1163,13 +1366,32 @@ const styles = StyleSheet.create({
     borderColor: t.colors.border,
     overflow: 'hidden',
     backgroundColor: '#FBFCFF',
+    position: 'relative',
   },
   studentCardHead: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 14,
+    paddingRight: 60,
     gap: 12,
+  },
+  studentCardHeadSelected: {
+    backgroundColor: t.colors.primary,
+  },
+  studentCardChevron: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EEF3FA',
+  },
+  studentCardChevronSelected: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
   studentCardText: {
     flex: 1,
@@ -1180,6 +1402,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: t.colors.text,
   },
+  studentCardNameSelected: {
+    color: '#FFFFFF',
+  },
   studentCardUser: {
     fontSize: 13,
     color: t.colors.textSecondary,
@@ -1187,6 +1412,9 @@ const styles = StyleSheet.create({
   studentCardMeta: {
     fontSize: 13,
     color: t.colors.textSecondary,
+  },
+  studentCardMetaSelected: {
+    color: 'rgba(255,255,255,0.86)',
   },
   studentCardBody: {
     paddingHorizontal: 14,
@@ -1233,29 +1461,45 @@ const styles = StyleSheet.create({
     color: t.colors.textSecondary,
   },
   walletPieces: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
   },
   walletPiece: {
-    minWidth: '31%',
-    flexGrow: 1,
-    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: t.colors.border,
-    backgroundColor: '#F8FAFF',
-    padding: 12,
+    backgroundColor: '#FBFCFF',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  walletPieceLabelWrap: {
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   walletPieceValue: {
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '700',
     color: t.colors.text,
   },
+  walletPieceCountBadge: {
+    minWidth: 42,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: t.colors.border,
+    backgroundColor: t.colors.surfaceVariant,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
   walletPieceCount: {
-    fontSize: 13,
-    color: t.colors.textSecondary,
+    fontSize: 15,
+    fontWeight: '800',
+    color: t.colors.text,
   },
   editorList: {
     gap: 8,
@@ -1347,6 +1591,33 @@ const styles = StyleSheet.create({
   },
   logList: {
     gap: 8,
+  },
+  logFilterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  logFilterChip: {
+    minHeight: 36,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: t.colors.border,
+    backgroundColor: '#F7F9FD',
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logFilterChipActive: {
+    backgroundColor: t.colors.primary,
+    borderColor: t.colors.primary,
+  },
+  logFilterChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: t.colors.textSecondary,
+  },
+  logFilterChipTextActive: {
+    color: '#FFFFFF',
   },
   logCard: {
     borderRadius: 14,
@@ -1442,6 +1713,28 @@ const styles = StyleSheet.create({
   emptyInline: {
     fontSize: 14,
     color: t.colors.textSecondary,
+  },
+  secondaryInlineBtn: {
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: t.colors.error,
+    backgroundColor: '#FFF5F5',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  secondaryInlineBtnDisabled: {
+    opacity: 0.45,
+  },
+  secondaryInlineBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  secondaryInlineBtnTextDanger: {
+    color: t.colors.error,
   },
   primaryInlineBtn: {
     minHeight: 44,

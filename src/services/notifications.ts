@@ -22,6 +22,10 @@ export interface TutorAlertPayload {
 }
 
 export async function registerForPushNotifications(userId: string): Promise<string | null> {
+  if (Platform.OS === 'ios') {
+    return null;
+  }
+
   const current = await Notifications.getPermissionsAsync();
   const finalStatus =
     current.status === 'granted'

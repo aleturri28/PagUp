@@ -42,6 +42,7 @@ import { sendSos } from '../../api/payments';
 import { studentTheme as t } from '../../theme';
 import { StackScreenProps } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
+import { getMoneyImageUri } from '../../constants/moneyImages';
 
 // ============================================================
 // TIPI E COSTANTI
@@ -875,20 +876,8 @@ interface StepInstructionsProps {
   compact: boolean;
 }
 
-const MONEY_IMAGE_BY_VALUE: Record<number, string> = {
-  50:   'https://commons.wikimedia.org/wiki/Special:FilePath/EUR_50_obverse_(2002_issue).jpg',
-  20:   'https://commons.wikimedia.org/wiki/Special:FilePath/EUR_20_obverse_(2002_issue).jpg',
-  10:   'https://commons.wikimedia.org/wiki/Special:FilePath/EUR_10_obverse_(2002_issue).jpg',
-  5:    'https://commons.wikimedia.org/wiki/Special:FilePath/EUR_5_obverse_(2002_issue).jpg',
-  2:    'https://commons.wikimedia.org/wiki/Special:FilePath/2_Euro_common_face_(Old_Design)_(5133941308).jpg',
-  1:    'https://commons.wikimedia.org/wiki/Special:FilePath/Reverso_1_euro.jpg',
-  0.5:  'https://commons.wikimedia.org/wiki/Special:FilePath/Euro_50_cent.jpg',
-  0.2:  'https://commons.wikimedia.org/wiki/Special:FilePath/20_cent_Euro_coins.jpg',
-  0.1:  'https://commons.wikimedia.org/wiki/Special:FilePath/Euro_10_cent.gif',
-};
-
 function MoneyPhotoRow({ item }: { item: MoneyItem }) {
-  const uri = item.imageUri || MONEY_IMAGE_BY_VALUE[item.value];
+  const uri = item.imageUri || getMoneyImageUri(item.value);
   return (
     <View
       style={styles.moneyPhotoRow}

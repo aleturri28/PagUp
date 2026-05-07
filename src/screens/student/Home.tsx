@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Modal,
@@ -9,10 +10,12 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { StackScreenProps } from '@react-navigation/stack';
-import { GraduationCap, LockKeyhole, Settings, Store, WalletCards, X } from 'lucide-react-native';
+import QRCode from 'react-native-qrcode-svg';
+import { GraduationCap, Link2, LockKeyhole, Settings, Store, UserPlus, WalletCards, X } from 'lucide-react-native';
 import { RootStackParamList } from '../../navigation/types';
 import { supabase } from '../../api/supabase';
 import { useWalletStore } from '../../store/useWalletStore';
@@ -22,23 +25,92 @@ import { studentTheme as t } from '../../theme';
 type Props = StackScreenProps<RootStackParamList, 'StudentHome'>;
 
 const SETTINGS_HOLD_MS = 3000;
+const PAIRING_PREFIX = 'pagup-student:';
 
 export default function StudentHome({ navigation }: Props) {
+  const { width } = useWindowDimensions();
   const inventory = useWalletStore((s) => s.inventory);
   const balance = inventory.reduce((sum, item) => sum + item.value, 0);
   const [pinVisible, setPinVisible] = useState(false);
   const [pin, setPin] = useState('');
   const [studentId, setStudentId] = useState<string | null>(null);
+  const [paired, setPaired] = useState<boolean | null>(null);
+  const [pairingQrVisible, setPairingQrVisible] = useState(false);
   const [checkingPin, setCheckingPin] = useState(false);
   const settingsHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const compact = width < 390;
+  const qrBoxSize = Math.max(220, Math.min(width - 72, 286));
+  const qrCodeSize = Math.max(180, Math.min(qrBoxSize - 38, 230));
+  const pairingValue = studentId ? `${PAIRING_PREFIX}${studentId}` : '';
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setStudentId(data.user?.id ?? null);
-    }).catch(() => {
-      setStudentId(null);
-    });
+    let active = true;
+
+    async function loadStudent() {
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (!active) return;
+        setStudentId(data.user?.id ?? null);
+      } catch {
+        if (!active) return;
+        setStudentId(null);
+      }
+    }
+
+    loadStudent().catch(() => {});
+    return () => {
+      active = false;
+    };
   }, []);
+
+  const refreshPairingState = useCallback(async (currentStudentId: string) => {
+    const { data: links, error } = await supabase
+      .from('tutor_students')
+      .select('tutor_id')
+      .eq('student_id', currentStudentId);
+
+    if (error) throw error;
+    setPaired((links?.length ?? 0) > 0);
+  }, []);
+
+  useEffect(() => {
+    if (!studentId) {
+      setPaired(null);
+      return;
+    }
+
+    let active = true;
+
+    refreshPairingState(studentId).catch((error) => {
+      if (!active) return;
+      console.warn('[StudentHome] Impossibile leggere associazione tutor:', error);
+      setPaired(false);
+    });
+
+    const channel = supabase
+      .channel(`student-pairing:${studentId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tutor_students',
+          filter: `student_id=eq.${studentId}`,
+        },
+        () => {
+          refreshPairingState(studentId).catch((error) => {
+            if (!active) return;
+            console.warn('[StudentHome] Refresh associazione tutor fallito:', error);
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel).catch(() => {});
+    };
+  }, [refreshPairingState, studentId]);
 
   const clearSettingsHoldTimer = useCallback(() => {
     if (settingsHoldTimer.current) {
@@ -71,6 +143,12 @@ export default function StudentHome({ navigation }: Props) {
       return;
     }
 
+    const normalizedPin = pin.trim();
+    if (!normalizedPin) {
+      Alert.alert('PIN mancante', 'Inserisci il PIN del tutor per continuare.');
+      return;
+    }
+
     setCheckingPin(true);
     try {
       const { data: links, error: linksError } = await supabase
@@ -94,7 +172,7 @@ export default function StudentHome({ navigation }: Props) {
       if (availablePins.length === 0) {
         throw new Error('Il tutor associato non ha ancora impostato un PIN.');
       }
-      const hasMatch = availablePins.some((value) => value === pin);
+      const hasMatch = availablePins.some((value) => value.trim() === normalizedPin);
 
       if (!hasMatch) {
         Alert.alert('PIN errato', 'Inserisci il PIN del tutor associato a questa app.');
@@ -103,13 +181,95 @@ export default function StudentHome({ navigation }: Props) {
       }
 
       closeSettingsGate();
-      navigation.navigate('Settings', { unlocked: true });
+      navigation.push('Settings', { unlocked: true });
     } catch (error) {
       Alert.alert('Accesso non riuscito', error instanceof Error ? error.message : 'Riprova.');
     } finally {
       setCheckingPin(false);
     }
   }, [closeSettingsGate, navigation, pin, studentId]);
+
+  if (paired === null) {
+    return (
+      <SafeAreaView style={styles.root}>
+        <View style={styles.loadingState}>
+          <ActivityIndicator color={t.colors.primary} />
+          <Text style={styles.loadingText}>Carico il profilo studente...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!paired) {
+    return (
+      <SafeAreaView style={styles.root}>
+        <View style={[styles.unpairedContent, compact && styles.unpairedContentCompact]}>
+          <View style={styles.unpairedHero}>
+            <View style={styles.unpairedBadge}>
+              <Link2 size={24} color={t.colors.onPrimary} />
+            </View>
+            <Text style={styles.unpairedTitle}>Collega il tuo tutor per iniziare</Text>
+            <Text style={styles.unpairedText}>
+              Finche il tutor non scansiona il tuo QR, l&apos;account studente resta in attesa e non mostra pagamenti o allenamento.
+            </Text>
+          </View>
+
+          <View style={styles.unpairedCard}>
+            <View style={[styles.unpairedQrBox, { width: qrBoxSize, height: qrBoxSize }]}>
+              {pairingValue ? <QRCode value={pairingValue} size={qrCodeSize} quietZone={12} /> : null}
+            </View>
+            <Text style={styles.unpairedQrTitle}>Mostra questo QR al tutor</Text>
+            <Text style={styles.unpairedQrText}>
+              Appena il tutor completa l&apos;associazione, questa schermata si aggiorna e la home studente si attiva.
+            </Text>
+            <TouchableOpacity
+              style={styles.unpairedPrimaryAction}
+              onPress={() => setPairingQrVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Apri QR studente a schermo intero"
+            >
+              <UserPlus size={20} color={t.colors.onPrimary} />
+              <Text style={styles.unpairedPrimaryActionText}>Apri QR grande</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <Modal
+          visible={pairingQrVisible}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setPairingQrVisible(false)}
+        >
+          <SafeAreaView style={styles.modalRoot}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleWrap}>
+                <Link2 size={22} color={t.colors.primary} />
+                <Text style={styles.modalTitle}>Pairing studente</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalClose}
+                onPress={() => setPairingQrVisible(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Chiudi QR studente"
+              >
+                <X size={20} color={t.colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.qrStage}>
+              <View style={[styles.qrModalBox, { width: qrBoxSize, height: qrBoxSize }]}>
+                {pairingValue ? <QRCode value={pairingValue} size={qrCodeSize} quietZone={12} /> : null}
+              </View>
+              <Text style={styles.qrModalTitle}>Mostra questo QR al tutor</Text>
+              <Text style={styles.qrModalText}>
+                Quando viene scansionato, la home studente si sblocca automaticamente.
+              </Text>
+            </View>
+          </SafeAreaView>
+        </Modal>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.root}>
@@ -218,6 +378,95 @@ const styles = StyleSheet.create({
     paddingHorizontal: t.spacing.lg,
     paddingBottom: t.spacing.lg,
     gap: t.spacing.md,
+  },
+  loadingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: t.spacing.sm,
+  },
+  loadingText: {
+    color: t.colors.textSecondary,
+    fontSize: 16,
+    fontWeight: t.typography.weightSemiBold,
+  },
+  unpairedContent: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: t.spacing.lg,
+    paddingTop: t.spacing.md,
+    paddingBottom: t.spacing.xl,
+  },
+  unpairedContentCompact: {
+    gap: t.spacing.md,
+  },
+  unpairedHero: {
+    borderRadius: t.radius.xl,
+    backgroundColor: t.colors.primary,
+    padding: t.spacing.lg,
+    gap: t.spacing.sm,
+  },
+  unpairedBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: t.radius.lg,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unpairedTitle: {
+    color: t.colors.onPrimary,
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: t.typography.weightBold,
+  },
+  unpairedText: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: t.typography.weightMedium,
+  },
+  unpairedCard: {
+    borderRadius: t.radius.xl,
+    backgroundColor: t.colors.background,
+    padding: t.spacing.lg,
+    alignItems: 'center',
+    gap: t.spacing.md,
+  },
+  unpairedQrBox: {
+    borderRadius: t.radius.xl,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unpairedQrTitle: {
+    color: t.colors.text,
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: t.typography.weightBold,
+    textAlign: 'center',
+  },
+  unpairedQrText: {
+    color: t.colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  unpairedPrimaryAction: {
+    minHeight: t.spacing.touchTarget,
+    minWidth: '100%',
+    borderRadius: t.radius.lg,
+    backgroundColor: t.colors.primary,
+    paddingHorizontal: t.spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: t.spacing.sm,
+  },
+  unpairedPrimaryActionText: {
+    color: t.colors.onPrimary,
+    fontSize: 16,
+    fontWeight: t.typography.weightBold,
   },
   topRow: {
     paddingTop: t.spacing.md,
@@ -357,5 +606,60 @@ const styles = StyleSheet.create({
   },
   trainingTitle: {
     color: t.colors.primary,
+  },
+  modalRoot: {
+    flex: 1,
+    backgroundColor: t.colors.surface,
+  },
+  modalHeader: {
+    paddingHorizontal: t.spacing.lg,
+    paddingVertical: t.spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalTitleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: t.spacing.sm,
+  },
+  modalTitle: {
+    color: t.colors.text,
+    fontSize: 22,
+    fontWeight: t.typography.weightBold,
+  },
+  modalClose: {
+    width: 42,
+    height: 42,
+    borderRadius: t.radius.lg,
+    backgroundColor: t.colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qrStage: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: t.spacing.xl,
+    gap: t.spacing.md,
+  },
+  qrModalBox: {
+    borderRadius: t.radius.xl,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qrModalTitle: {
+    color: t.colors.text,
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: t.typography.weightBold,
+    textAlign: 'center',
+  },
+  qrModalText: {
+    color: t.colors.textSecondary,
+    fontSize: 16,
+    lineHeight: 22,
+    textAlign: 'center',
   },
 });
