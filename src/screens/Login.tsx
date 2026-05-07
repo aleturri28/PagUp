@@ -5,7 +5,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { StackScreenProps } from '@react-navigation/stack';
 import { ArrowRight, LockKeyhole, Mail, Sparkles } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../navigation/types';
 import { signInWithPassword } from '../api/auth';
 import { useWalletStore } from '../store/useWalletStore';
@@ -52,79 +53,85 @@ export default function Login({ navigation }: Props) {
   }, [email, navigation, password, syncWithSupabase]);
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={[styles.shell, compact && styles.shellCompact]}>
-          <View style={styles.hero}>
-            <View style={styles.brandBadge}>
-              <Sparkles size={20} color="#FFFFFF" />
-              <Text style={styles.brandBadgeText}>PagUp</Text>
-            </View>
-            <View style={styles.heroIcon}>
-              <Image source={require('../../assets/icon.png')} style={styles.heroLogo} resizeMode="contain" />
-            </View>
-            <Text style={[styles.title, compact && styles.titleCompact]}>Accedi al tuo spazio</Text>
-            <Text style={styles.subtitle}>
-              Studente e tutor entrano dallo stesso punto. L’app apre subito la sezione corretta.
-            </Text>
-          </View>
-
-          <View style={styles.card}>
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>Email</Text>
-              <View style={styles.inputWrap}>
-                <Mail size={18} color="#5F6B84" />
-                <TextInput
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  placeholder="nome@email.it"
-                  placeholderTextColor="#8B96AC"
-                  style={styles.input}
-                  editable={!loading}
-                />
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[styles.shell, compact && styles.shellCompact]}>
+            <View style={styles.hero}>
+              <View style={styles.brandBadge}>
+                <Sparkles size={20} color="#FFFFFF" />
+                <Text style={styles.brandBadgeText}>PagUp</Text>
               </View>
-            </View>
-
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>Password</Text>
-              <View style={styles.inputWrap}>
-                <LockKeyhole size={18} color="#5F6B84" />
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  placeholder="Inserisci la password"
-                  placeholderTextColor="#8B96AC"
-                  style={styles.input}
-                  editable={!loading}
-                />
+              <View style={styles.heroIcon}>
+                <Image source={require('../../assets/icon.png')} style={styles.heroLogo} resizeMode="contain" />
               </View>
+              <Text style={[styles.title, compact && styles.titleCompact]}>Accedi al tuo spazio</Text>
+              <Text style={styles.subtitle}>
+                Studente e tutor entrano dallo stesso punto. L’app apre subito la sezione corretta.
+              </Text>
             </View>
 
-            <TouchableOpacity
-              style={[styles.primaryButton, loading && styles.buttonDisabled]}
-              onPress={handleLogin}
-              disabled={loading}
-              accessibilityRole="button"
-              accessibilityLabel="Accedi"
-            >
-              {loading ? <ActivityIndicator color="#FFFFFF" /> : <ArrowRight size={20} color="#FFFFFF" />}
-              <Text style={styles.primaryButtonText}>{loading ? 'Accesso...' : 'Entra'}</Text>
-            </TouchableOpacity>
+            <View style={styles.card}>
+              <View style={styles.field}>
+                <Text style={styles.fieldLabel}>Email</Text>
+                <View style={styles.inputWrap}>
+                  <Mail size={18} color="#5F6B84" />
+                  <TextInput
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    placeholder="nome@email.it"
+                    placeholderTextColor="#8B96AC"
+                    style={styles.input}
+                    editable={!loading}
+                  />
+                </View>
+              </View>
 
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={() => navigation.navigate('Register')}
-              disabled={loading}
-              accessibilityRole="button"
-              accessibilityLabel="Vai alla registrazione"
-            >
-              <Text style={styles.secondaryButtonText}>Crea un nuovo account</Text>
-            </TouchableOpacity>
+              <View style={styles.field}>
+                <Text style={styles.fieldLabel}>Password</Text>
+                <View style={styles.inputWrap}>
+                  <LockKeyhole size={18} color="#5F6B84" />
+                  <TextInput
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry
+                    placeholder="Inserisci la password"
+                    placeholderTextColor="#8B96AC"
+                    style={styles.input}
+                    editable={!loading}
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.primaryButton, loading && styles.buttonDisabled]}
+                onPress={handleLogin}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Accedi"
+              >
+                {loading ? <ActivityIndicator color="#FFFFFF" /> : <ArrowRight size={20} color="#FFFFFF" />}
+                <Text style={styles.primaryButtonText}>{loading ? 'Accesso...' : 'Entra'}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={() => navigation.navigate('Register')}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Vai alla registrazione"
+              >
+                <Text style={styles.secondaryButtonText}>Crea un nuovo account</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -138,12 +145,18 @@ const styles = StyleSheet.create({
   keyboard: {
     flex: 1,
   },
+  scrollContent: {
+    flexGrow: 1,
+  },
   shell: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: 22,
     paddingVertical: 28,
     gap: 18,
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
   },
   shellCompact: {
     paddingHorizontal: 16,

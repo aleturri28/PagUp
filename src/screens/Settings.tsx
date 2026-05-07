@@ -3,7 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -13,6 +13,7 @@ import {
 import { StackScreenProps } from '@react-navigation/stack';
 import { ArrowLeft, Link2, LogOut, ShieldCheck, UserPlus, X } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../navigation/types';
 import { getProfile, signOut } from '../api/auth';
 import { supabase } from '../api/supabase';
@@ -99,7 +100,7 @@ export default function SettingsScreen({ navigation, route }: Props) {
   }, [navigation, stopSync]);
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.goBack()} accessibilityLabel="Indietro">
           <ArrowLeft size={22} color="#1D2A43" />
@@ -108,32 +109,34 @@ export default function SettingsScreen({ navigation, route }: Props) {
         <View style={styles.iconSpacer} />
       </View>
 
-      <View style={[styles.content, compact && styles.contentCompact]}>
-        <View style={styles.hero}>
-          <View style={styles.heroBadge}>
-            <ShieldCheck size={22} color="#FFFFFF" />
+      <ScrollView contentContainerStyle={[styles.content, compact && styles.contentCompact]} showsVerticalScrollIndicator={false}>
+        <View style={styles.contentInner}>
+          <View style={styles.hero}>
+            <View style={styles.heroBadge}>
+              <ShieldCheck size={22} color="#FFFFFF" />
+            </View>
+            <Text style={[styles.heroName, compact && styles.heroNameCompact]}>{name}</Text>
+            <Text style={styles.heroUser}>@{username}</Text>
           </View>
-          <Text style={[styles.heroName, compact && styles.heroNameCompact]}>{name}</Text>
-          <Text style={styles.heroUser}>@{username}</Text>
-        </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Collega tutor</Text>
-          <Text style={styles.cardBody}>Mostra il QR al tutor per farti associare alla sua dashboard.</Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={() => setQrVisible(true)}>
-            <UserPlus size={20} color="#FFFFFF" />
-            <Text style={styles.primaryBtnText}>Mostra QR studente</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Collega tutor</Text>
+            <Text style={styles.cardBody}>Mostra il QR al tutor per farti associare alla sua dashboard.</Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => setQrVisible(true)}>
+              <UserPlus size={20} color="#FFFFFF" />
+              <Text style={styles.primaryBtnText}>Mostra QR studente</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} disabled={loading || profileLoading}>
+            {loading || profileLoading ? <ActivityIndicator color="#FFFFFF" /> : <LogOut size={20} color="#FFFFFF" />}
+            <Text style={styles.logoutText}>{loading ? 'Uscita...' : 'Esci dall’account'}</Text>
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} disabled={loading || profileLoading}>
-          {loading || profileLoading ? <ActivityIndicator color="#FFFFFF" /> : <LogOut size={20} color="#FFFFFF" />}
-          <Text style={styles.logoutText}>{loading ? 'Uscita...' : 'Esci dall’account'}</Text>
-        </TouchableOpacity>
-      </View>
+      </ScrollView>
 
       <Modal visible={qrVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setQrVisible(false)}>
-        <SafeAreaView style={styles.modalRoot}>
+        <SafeAreaView style={styles.modalRoot} edges={['top', 'bottom']}>
           <View style={styles.modalHeader}>
             <View style={styles.modalTitleWrap}>
               <Link2 size={22} color="#1F3C88" />
@@ -181,6 +184,13 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '800', color: '#1D2A43' },
   content: { flex: 1, padding: 16, gap: 14 },
   contentCompact: { padding: 14 },
+  contentInner: {
+    flexGrow: 1,
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
+    gap: 14,
+  },
   hero: {
     borderRadius: 18,
     backgroundColor: '#1F3C88',

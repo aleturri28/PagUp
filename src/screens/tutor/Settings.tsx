@@ -3,7 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -14,6 +14,7 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StackScreenProps } from '@react-navigation/stack';
 import { ArrowLeft, Camera, KeyRound, LogOut, ScanLine, ShieldCheck, X } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../../navigation/types';
 import { getProfile, signOut, updateTutorPin } from '../../api/auth';
 import { supabase } from '../../api/supabase';
@@ -235,7 +236,7 @@ export default function TutorSettings({ navigation, route }: Props) {
   ), [currentTutorPin]);
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.goBack()} accessibilityLabel="Indietro">
           <ArrowLeft size={22} color="#1D2A43" />
@@ -244,33 +245,35 @@ export default function TutorSettings({ navigation, route }: Props) {
         <View style={styles.iconSpacer} />
       </View>
 
-      <View style={[styles.content, compact && styles.contentCompact]}>
-        <View style={styles.hero}>
-          <View style={styles.heroBadge}>
-            <ShieldCheck size={22} color="#FFFFFF" />
+      <ScrollView contentContainerStyle={[styles.content, compact && styles.contentCompact]} showsVerticalScrollIndicator={false}>
+        <View style={styles.contentInner}>
+          <View style={styles.hero}>
+            <View style={styles.heroBadge}>
+              <ShieldCheck size={22} color="#FFFFFF" />
+            </View>
+            <Text style={[styles.heroName, compact && styles.heroNameCompact]}>{profileName}</Text>
+            <Text style={styles.heroUser}>@{profileUsername}</Text>
           </View>
-          <Text style={[styles.heroName, compact && styles.heroNameCompact]}>{profileName}</Text>
-          <Text style={styles.heroUser}>@{profileUsername}</Text>
-        </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Associa studente</Text>
-          <Text style={styles.cardBody}>Apri la fotocamera e scansiona il QR mostrato sul dispositivo dello studente.</Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={() => { openScanner().catch(() => {}); }}>
-            {pairingBusy ? <ActivityIndicator color="#FFFFFF" /> : <Camera size={20} color="#FFFFFF" />}
-            <Text style={styles.primaryBtnText}>{pairingBusy ? 'Associo...' : 'Apri scanner QR'}</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Associa studente</Text>
+            <Text style={styles.cardBody}>Apri la fotocamera e scansiona il QR mostrato sul dispositivo dello studente.</Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => { openScanner().catch(() => {}); }}>
+              {pairingBusy ? <ActivityIndicator color="#FFFFFF" /> : <Camera size={20} color="#FFFFFF" />}
+              <Text style={styles.primaryBtnText}>{pairingBusy ? 'Associo...' : 'Apri scanner QR'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.card}>
+            {pinCardBody}
+          </View>
+
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} disabled={loading}>
+            {loading ? <ActivityIndicator color="#FFFFFF" /> : <LogOut size={20} color="#FFFFFF" />}
+            <Text style={styles.logoutText}>{loading ? 'Uscita...' : 'Esci dall’account'}</Text>
           </TouchableOpacity>
         </View>
-
-        <View style={styles.card}>
-          {pinCardBody}
-        </View>
-
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} disabled={loading}>
-          {loading ? <ActivityIndicator color="#FFFFFF" /> : <LogOut size={20} color="#FFFFFF" />}
-          <Text style={styles.logoutText}>{loading ? 'Uscita...' : 'Esci dall’account'}</Text>
-        </TouchableOpacity>
-      </View>
+      </ScrollView>
 
       <Modal visible={pinModalVisible} transparent animationType="fade" onRequestClose={closePinModal}>
         <View style={styles.overlay}>
@@ -419,6 +422,13 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '800', color: '#1D2A43' },
   content: { flex: 1, padding: 16, gap: 14 },
   contentCompact: { padding: 14 },
+  contentInner: {
+    flexGrow: 1,
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
+    gap: 14,
+  },
   hero: {
     borderRadius: 18,
     backgroundColor: '#1F3C88',

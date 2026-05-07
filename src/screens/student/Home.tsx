@@ -5,7 +5,6 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
-  SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
@@ -16,6 +15,7 @@ import {
 import { StackScreenProps } from '@react-navigation/stack';
 import QRCode from 'react-native-qrcode-svg';
 import { GraduationCap, Link2, LockKeyhole, Settings, Store, UserPlus, WalletCards, X } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../../navigation/types';
 import { supabase } from '../../api/supabase';
 import { useWalletStore } from '../../store/useWalletStore';
@@ -28,7 +28,7 @@ const SETTINGS_HOLD_MS = 3000;
 const PAIRING_PREFIX = 'pagup-student:';
 
 export default function StudentHome({ navigation }: Props) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const inventory = useWalletStore((s) => s.inventory);
   const balance = inventory.reduce((sum, item) => sum + item.value, 0);
   const [pinVisible, setPinVisible] = useState(false);
@@ -39,9 +39,12 @@ export default function StudentHome({ navigation }: Props) {
   const [checkingPin, setCheckingPin] = useState(false);
   const settingsHoldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const compact = width < 390;
+  const shortScreen = height < 760;
+  const veryShortScreen = height < 690;
   const qrBoxSize = Math.max(220, Math.min(width - 72, 286));
   const qrCodeSize = Math.max(180, Math.min(qrBoxSize - 38, 230));
   const pairingValue = studentId ? `${PAIRING_PREFIX}${studentId}` : '';
+  const actionIconSize = veryShortScreen ? 48 : shortScreen ? 56 : 64;
 
   useEffect(() => {
     let active = true;
@@ -191,7 +194,7 @@ export default function StudentHome({ navigation }: Props) {
 
   if (paired === null) {
     return (
-      <SafeAreaView style={styles.root}>
+      <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
         <View style={styles.loadingState}>
           <ActivityIndicator color={t.colors.primary} />
           <Text style={styles.loadingText}>Carico il profilo studente...</Text>
@@ -202,7 +205,7 @@ export default function StudentHome({ navigation }: Props) {
 
   if (!paired) {
     return (
-      <SafeAreaView style={styles.root}>
+      <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
         <View style={[styles.unpairedContent, compact && styles.unpairedContentCompact]}>
           <View style={styles.unpairedHero}>
             <View style={styles.unpairedBadge}>
@@ -240,7 +243,7 @@ export default function StudentHome({ navigation }: Props) {
           presentationStyle="pageSheet"
           onRequestClose={() => setPairingQrVisible(false)}
         >
-          <SafeAreaView style={styles.modalRoot}>
+          <SafeAreaView style={styles.modalRoot} edges={['top', 'bottom']}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleWrap}>
                 <Link2 size={22} color={t.colors.primary} />
@@ -272,8 +275,8 @@ export default function StudentHome({ navigation }: Props) {
   }
 
   return (
-    <SafeAreaView style={styles.root}>
-      <View style={styles.topRow}>
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+      <View style={[styles.topRow, shortScreen && styles.topRowCompact]}>
         <TouchableOpacity
           style={styles.settingsButton}
           onPressIn={startSettingsHold}
@@ -287,7 +290,7 @@ export default function StudentHome({ navigation }: Props) {
       </View>
 
       <View
-        style={styles.balanceCard}
+        style={[styles.balanceCard, shortScreen && styles.balanceCardCompact]}
         accessible
         accessibilityLabel={`Hai ${formatEuro(balance)} nel portafoglio`}
         accessibilityHint="Mostra il saldo attuale del tuo portafoglio"
@@ -296,30 +299,30 @@ export default function StudentHome({ navigation }: Props) {
           <WalletCards size={20} color={t.colors.textSecondary} />
           <Text style={styles.balanceLabel}>Il tuo saldo:</Text>
         </View>
-        <Text style={styles.balanceAmount}>{formatEuro(balance)}</Text>
+        <Text style={[styles.balanceAmount, shortScreen && styles.balanceAmountCompact]}>{formatEuro(balance)}</Text>
       </View>
 
-      <View style={styles.actions}>
+      <View style={[styles.actions, shortScreen && styles.actionsCompact]}>
         <TouchableOpacity
-          style={[styles.action, styles.payAction]}
+          style={[styles.action, styles.payAction, shortScreen && styles.actionCompact, veryShortScreen && styles.actionVeryCompact]}
           onPress={() => navigation.navigate('PaymentWizard')}
           accessibilityRole="button"
           accessibilityLabel="Vai a pagare"
           accessibilityHint="Apre la procedura di pagamento guidata"
         >
-          <Store size={64} color={t.colors.onPrimary} />
-          <Text style={styles.actionTitle}>Paga alla cassa</Text>
+          <Store size={actionIconSize} color={t.colors.onPrimary} />
+          <Text style={[styles.actionTitle, shortScreen && styles.actionTitleCompact]}>Paga alla cassa</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.action, styles.trainingAction]}
+          style={[styles.action, styles.trainingAction, shortScreen && styles.actionCompact, veryShortScreen && styles.actionVeryCompact]}
           onPress={() => navigation.navigate('Training')}
           accessibilityRole="button"
           accessibilityLabel="Vai ad allenarti"
           accessibilityHint="Apre la modalità allenamento senza usare soldi veri"
         >
-          <GraduationCap size={64} color={t.colors.primary} />
-          <Text style={[styles.actionTitle, styles.trainingTitle]}>Allenati</Text>
+          <GraduationCap size={actionIconSize} color={t.colors.primary} />
+          <Text style={[styles.actionTitle, shortScreen && styles.actionTitleCompact, styles.trainingTitle]}>Allenati</Text>
         </TouchableOpacity>
       </View>
 
@@ -472,6 +475,9 @@ const styles = StyleSheet.create({
     paddingTop: t.spacing.md,
     alignItems: 'flex-start',
   },
+  topRowCompact: {
+    paddingTop: t.spacing.xs,
+  },
   settingsButton: {
     width: t.spacing.touchTarget,
     height: t.spacing.touchTarget,
@@ -564,6 +570,10 @@ const styles = StyleSheet.create({
     paddingVertical: t.spacing.lg,
     gap: t.spacing.xs,
   },
+  balanceCardCompact: {
+    paddingHorizontal: t.spacing.md,
+    paddingVertical: t.spacing.md,
+  },
   balanceRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -580,9 +590,16 @@ const styles = StyleSheet.create({
     color: t.colors.primary,
     lineHeight: t.typography.sizeXXL * t.typography.lineHeightHeading,
   },
+  balanceAmountCompact: {
+    fontSize: t.typography.sizeXL,
+    lineHeight: t.typography.sizeXL * t.typography.lineHeightHeading,
+  },
   actions: {
     flex: 1,
     gap: t.spacing.md,
+  },
+  actionsCompact: {
+    gap: t.spacing.sm,
   },
   action: {
     flex: 1,
@@ -591,6 +608,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: t.spacing.md,
+  },
+  actionCompact: {
+    flex: 0,
+    minHeight: 168,
+    padding: t.spacing.md,
+    gap: t.spacing.sm,
+  },
+  actionVeryCompact: {
+    minHeight: 144,
   },
   payAction: {
     backgroundColor: t.colors.primary,
@@ -603,6 +629,10 @@ const styles = StyleSheet.create({
     fontWeight: t.typography.weightBold,
     color: t.colors.onPrimary,
     textAlign: 'center',
+  },
+  actionTitleCompact: {
+    fontSize: t.typography.sizeMD,
+    lineHeight: t.typography.sizeMD * t.typography.lineHeightHeading,
   },
   trainingTitle: {
     color: t.colors.primary,

@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   Modal,
   ScrollView,
   ActivityIndicator,
@@ -13,6 +12,7 @@ import {
   Linking,
   useWindowDimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
   FadeIn,
   FadeOut,
@@ -1236,7 +1236,7 @@ export default function PaymentWizard({ navigation }: Props) {
   const exiting  = direction === 'forward' ? SlideOutLeft.duration(280) : SlideOutRight.duration(280);
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       {step === 'amount' ? (
         <View style={styles.headerRow}>
           <TouchableOpacity

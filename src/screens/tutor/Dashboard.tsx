@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -37,6 +36,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { EURO_DENOMINATIONS, formatEuro, PaymentMode } from '../../utils/paymentLogic';
 import { tutorTheme as t } from '../../theme';
 import { getMoneyImageUri } from '../../constants/moneyImages';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 type Props = StackScreenProps<RootStackParamList, 'TutorDashboard'>;
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
@@ -197,12 +197,30 @@ function buildEmptyDraft(): DraftCounts {
   return Object.fromEntries(EDITOR_DENOMS.map((value) => [String(value), 0]));
 }
 
-function KpiCard({ label, value, sub, accent, cardStyle, onPress }: { label: string; value: string; sub?: string; accent?: string; cardStyle?: object; onPress?: () => void }) {
+function KpiCard({
+  label,
+  value,
+  sub,
+  accent,
+  cardStyle,
+  valueStyle,
+  subStyle,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  accent?: string;
+  cardStyle?: object;
+  valueStyle?: object;
+  subStyle?: object;
+  onPress?: () => void;
+}) {
   const content = (
     <View style={[styles.kpiCard, cardStyle, accent ? { borderColor: accent } : null]}>
       <Text style={styles.kpiLabel}>{label}</Text>
-      <Text style={styles.kpiValue} numberOfLines={1}>{value}</Text>
-      {sub ? <Text style={styles.kpiSub}>{sub}</Text> : null}
+      <Text style={[styles.kpiValue, valueStyle]} numberOfLines={1}>{value}</Text>
+      {sub ? <Text style={[styles.kpiSub, subStyle]}>{sub}</Text> : null}
     </View>
   );
 
@@ -259,7 +277,7 @@ function WeeklyBarChart({ bars }: { bars: DailyBar[] }) {
 }
 
 export default function TutorDashboard({ navigation }: Props) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const [tutorId, setTutorId] = useState<string | null>(null);
   const [students, setStudents] = useState<StudentState[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -301,8 +319,13 @@ export default function TutorDashboard({ navigation }: Props) {
   const totalSos = useMemo(() => allLogs.filter((log) => log.kind === 'sos').length, [allLogs]);
   const isCompact = width < 390;
   const isNarrow = width < 360;
+  const isShort = height < 760;
+  const isVeryShort = height < 700;
   const contentWidth = Math.max(width - 28, 220);
   const singleColumnCard = isCompact ? { minWidth: contentWidth } : undefined;
+  const compactKpiCard = isShort ? styles.kpiCardCompact : undefined;
+  const compactKpiValue = isShort ? styles.kpiValueCompact : undefined;
+  const compactKpiSub = isShort ? styles.kpiSubCompact : undefined;
   const walletPieceStyle = width < 430 ? { minWidth: Math.max((contentWidth - 8) / 2, 120) } : undefined;
 
   const draftEntries = useMemo(
@@ -565,7 +588,7 @@ export default function TutorDashboard({ navigation }: Props) {
 
     return (
       <>
-        <View style={styles.heroCard}>
+        <View style={[styles.heroCard, isShort && styles.heroCardCompact]}>
           <View style={[styles.heroTop, isCompact && styles.heroTopCompact]}>
             <View style={styles.heroIdentity}>
               <Text style={styles.heroEyebrow}>Studente selezionato</Text>
@@ -576,15 +599,15 @@ export default function TutorDashboard({ navigation }: Props) {
             </View>
           </View>
 
-          <View style={styles.heroGrid}>
-            <KpiCard label="Saldo" value={formatEuro(getBalance(selectedStudent.wallet))} sub={`${selectedStudent.wallet.length} pezzi`} accent={t.colors.primary} cardStyle={singleColumnCard} />
-            <KpiCard label="SOS" value={`${studentStats.sosCount}`} sub="totali inviati" accent={studentStats.sosCount > 0 ? t.colors.error : t.colors.border} cardStyle={singleColumnCard} />
-            <KpiCard label="Pagamenti" value={`${studentStats.totalPayments}`} sub={formatEuro(studentStats.totalVolume)} accent={t.colors.success} cardStyle={singleColumnCard} />
-            <KpiCard label="Bypass" value={`${studentStats.bypassRate}%`} sub={`${studentStats.bypassCount} usi`} accent={studentStats.bypassCount > 0 ? t.colors.warning : t.colors.border} cardStyle={singleColumnCard} />
+          <View style={[styles.heroGrid, isShort && styles.heroGridCompact]}>
+            <KpiCard label="Saldo" value={formatEuro(getBalance(selectedStudent.wallet))} sub={`${selectedStudent.wallet.length} pezzi`} accent={t.colors.primary} cardStyle={[singleColumnCard, compactKpiCard]} valueStyle={compactKpiValue} subStyle={compactKpiSub} />
+            <KpiCard label="SOS" value={`${studentStats.sosCount}`} sub="totali inviati" accent={studentStats.sosCount > 0 ? t.colors.error : t.colors.border} cardStyle={[singleColumnCard, compactKpiCard]} valueStyle={compactKpiValue} subStyle={compactKpiSub} />
+            <KpiCard label="Pagamenti" value={`${studentStats.totalPayments}`} sub={formatEuro(studentStats.totalVolume)} accent={t.colors.success} cardStyle={[singleColumnCard, compactKpiCard]} valueStyle={compactKpiValue} subStyle={compactKpiSub} />
+            <KpiCard label="Bypass" value={`${studentStats.bypassRate}%`} sub={`${studentStats.bypassCount} usi`} accent={studentStats.bypassCount > 0 ? t.colors.warning : t.colors.border} cardStyle={[singleColumnCard, compactKpiCard]} valueStyle={compactKpiValue} subStyle={compactKpiSub} />
           </View>
         </View>
 
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, isShort && styles.sectionCardCompact]}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recap generale</Text>
             <Clock3 size={16} color={t.colors.textSecondary} />
@@ -609,16 +632,16 @@ export default function TutorDashboard({ navigation }: Props) {
           </View>
         </View>
 
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, isShort && styles.sectionCardCompact]}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Panoramica tutor</Text>
             <Zap size={16} color={t.colors.primary} />
           </View>
-          <View style={styles.overviewStrip}>
-            <KpiCard label="Studenti" value={`${students.length}`} cardStyle={singleColumnCard} />
-            <KpiCard label="Saldo totale" value={formatEuro(totalBalance)} cardStyle={singleColumnCard} />
-            <KpiCard label="Pagamenti" value={`${totalPayments}`} cardStyle={singleColumnCard} />
-            <KpiCard label="SOS" value={`${totalSos}`} accent={totalSos > 0 ? t.colors.error : t.colors.border} cardStyle={singleColumnCard} />
+          <View style={[styles.overviewStrip, isShort && styles.overviewStripCompact]}>
+            <KpiCard label="Studenti" value={`${students.length}`} cardStyle={[singleColumnCard, compactKpiCard]} valueStyle={compactKpiValue} subStyle={compactKpiSub} />
+            <KpiCard label="Saldo totale" value={formatEuro(totalBalance)} cardStyle={[singleColumnCard, compactKpiCard]} valueStyle={compactKpiValue} subStyle={compactKpiSub} />
+            <KpiCard label="Pagamenti" value={`${totalPayments}`} cardStyle={[singleColumnCard, compactKpiCard]} valueStyle={compactKpiValue} subStyle={compactKpiSub} />
+            <KpiCard label="SOS" value={`${totalSos}`} accent={totalSos > 0 ? t.colors.error : t.colors.border} cardStyle={[singleColumnCard, compactKpiCard]} valueStyle={compactKpiValue} subStyle={compactKpiSub} />
           </View>
         </View>
       </>
@@ -973,7 +996,7 @@ export default function TutorDashboard({ navigation }: Props) {
         : 'Wallet';
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <View style={styles.topBar}>
         <View>
           <Text style={styles.appLabel}>PagUp Tutor</Text>
@@ -996,7 +1019,7 @@ export default function TutorDashboard({ navigation }: Props) {
         </View>
       ) : (
         <>
-          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <ScrollView contentContainerStyle={[styles.content, isVeryShort && styles.contentVeryShort]} showsVerticalScrollIndicator={false}>
             {activeTab === 'home' ? renderHomeTab() : null}
             {activeTab === 'stats' ? renderStatsTab() : null}
             {activeTab === 'students' ? renderStudentsTab() : null}
@@ -1025,7 +1048,7 @@ export default function TutorDashboard({ navigation }: Props) {
       )}
 
       <Modal visible={sosHistoryVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSosHistoryVisible(false)}>
-        <SafeAreaView style={styles.sosModalRoot}>
+        <SafeAreaView style={styles.sosModalRoot} edges={['top', 'bottom']}>
           <View style={styles.sosModalHeader}>
             <View style={styles.sosModalTitleWrap}>
               <Text style={styles.sosModalTitle}>Storico SOS</Text>
@@ -1145,11 +1168,18 @@ const styles = StyleSheet.create({
     paddingBottom: 110,
     gap: 12,
   },
+  contentVeryShort: {
+    paddingBottom: 92,
+  },
   heroCard: {
     backgroundColor: '#1F3D90',
     borderRadius: 16,
     padding: 16,
     gap: 14,
+  },
+  heroCardCompact: {
+    padding: 14,
+    gap: 10,
   },
   heroTop: {
     flexDirection: 'row',
@@ -1202,6 +1232,9 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
+  heroGridCompact: {
+    gap: 6,
+  },
   sectionCard: {
     backgroundColor: t.colors.surface,
     borderRadius: 16,
@@ -1209,6 +1242,10 @@ const styles = StyleSheet.create({
     borderColor: t.colors.border,
     padding: 14,
     gap: 12,
+  },
+  sectionCardCompact: {
+    padding: 12,
+    gap: 10,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1231,6 +1268,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  overviewStripCompact: {
+    gap: 6,
   },
   summaryList: {
     gap: 10,
@@ -1262,6 +1302,10 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 6,
   },
+  kpiCardCompact: {
+    padding: 10,
+    gap: 4,
+  },
   kpiLabel: {
     fontSize: 11,
     fontWeight: '700',
@@ -1274,9 +1318,15 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: t.colors.text,
   },
+  kpiValueCompact: {
+    fontSize: 20,
+  },
   kpiSub: {
     fontSize: 12,
     color: t.colors.textSecondary,
+  },
+  kpiSubCompact: {
+    fontSize: 11,
   },
   statsGrid: {
     flexDirection: 'row',

@@ -5,7 +5,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { StackScreenProps } from '@react-navigation/stack';
 import { LockKeyhole, UserPlus } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../navigation/types';
 import { signUp } from '../api/auth';
 import { useWalletStore } from '../store/useWalletStore';
@@ -86,11 +87,16 @@ export default function Register({ navigation }: Props) {
   }, [email, username, password, confirmPassword, role, navigation, syncWithSupabase]);
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         <View style={styles.card}>
           <View style={styles.brandIcon}>
             <Image source={require('../../assets/icon.png')} style={styles.brandLogo} resizeMode="contain" />
@@ -173,6 +179,7 @@ export default function Register({ navigation }: Props) {
             <Text style={styles.backButtonText}>Hai già un account? Accedi</Text>
           </TouchableOpacity>
         </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -185,10 +192,16 @@ const styles = StyleSheet.create({
   },
   keyboard: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     padding: 22,
   },
   card: {
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
     borderRadius: 24,
     backgroundColor: '#FFFFFF',
     padding: 24,
