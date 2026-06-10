@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Modal,
   ScrollView,
   StyleSheet,
@@ -19,6 +20,7 @@ import {
   CircleDollarSign,
   Clock3,
   House,
+  MapPin,
   Minus,
   Plus,
   RefreshCw,
@@ -56,14 +58,11 @@ interface DailyBar {
   label: string;
   total: number;
   clean: number;
-  bypasses: number;
   sos: number;
 }
 
 interface StudentStats {
   totalPayments: number;
-  bypassCount: number;
-  bypassRate: number;
   sosCount: number;
   totalVolume: number;
   avgPayment: number;
@@ -71,6 +70,7 @@ interface StudentStats {
 
 type BreakdownEntry = { value: number; count: number };
 type DraftCounts = Record<string, number>;
+type SosLocation = { latitude: number; longitude: number; accuracy?: number | null };
 
 const DAY_LABELS_IT = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
 const EDITOR_DENOMS = EURO_DENOMINATIONS.filter((value) => value >= 0.1);
@@ -85,7 +85,6 @@ function getDailyPayments(logs: ActivityRow[]): DailyBar[] {
       label: DAY_LABELS_IT[date.getDay()] ?? '—',
       total: dayPayments.length,
       clean: dayPayments.filter((l) => !l.used_bypass).length,
-      bypasses: dayPayments.filter((l) => l.used_bypass).length,
       sos: logs.filter((l) => l.kind === 'sos' && l.created_at.startsWith(dayStr)).length,
     };
   });
@@ -93,14 +92,11 @@ function getDailyPayments(logs: ActivityRow[]): DailyBar[] {
 
 function getStudentStats(logs: ActivityRow[]): StudentStats {
   const payments = logs.filter((l) => l.kind === 'payment');
-  const bypassed = payments.filter((l) => l.used_bypass);
   const sos = logs.filter((l) => l.kind === 'sos');
   const volume = payments.reduce((sum, l) => sum + (l.amount ?? 0), 0);
 
   return {
     totalPayments: payments.length,
-    bypassCount: bypassed.length,
-    bypassRate: payments.length > 0 ? Math.round((bypassed.length / payments.length) * 100) : 0,
     sosCount: sos.length,
     totalVolume: Math.round(volume * 100) / 100,
     avgPayment: payments.length > 0 ? Math.round((volume / payments.length) * 100) / 100 : 0,
@@ -188,9 +184,51 @@ function logKindLabel(log: ActivityRow): string {
 
 function logAmount(log: ActivityRow): number | null {
   if (log.kind === 'payment') return log.covered_amount ?? log.amount;
+  if (log.kind === 'sos') return sosAmount(log.metadata);
   const items = metadataItems(log.metadata);
   if (items.length > 0) return totalFromBreakdown(items);
   return log.amount;
+}
+
+function metadataRecord(metadata: Json): Record<string, Json | undefined> | null {
+  return metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? metadata
+    : null;
+}
+
+function sosScreenLabel(metadata: Json): string {
+  const screen = metadataRecord(metadata)?.screen_name;
+  if (screen === 'amount') return 'Inserimento importo';
+  if (screen === 'confirm') return 'Conferma importo';
+  if (screen === 'instructions') return 'Scelta dei soldi';
+  if (screen === 'change') return 'Resto / completamento';
+  return 'Non indicata';
+}
+
+function sosAmount(metadata: Json): number | null {
+  const amount = metadataRecord(metadata)?.amount;
+  return typeof amount === 'number' ? amount : null;
+}
+
+function sosLocation(metadata: Json): SosLocation | null {
+  const location = metadataRecord(metadata)?.location;
+  if (!location || typeof location !== 'object' || Array.isArray(location)) return null;
+  const latitude = location.latitude;
+  const longitude = location.longitude;
+  const accuracy = location.accuracy;
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') return null;
+  return {
+    latitude,
+    longitude,
+    accuracy: typeof accuracy === 'number' ? accuracy : null,
+  };
+}
+
+function openMaps(location: SosLocation) {
+  const url = `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`;
+  Linking.openURL(url).catch(() => {
+    Alert.alert('Mappa non aperta', 'La posizione e salvata, ma non riesco ad aprire la mappa.');
+  });
 }
 
 function buildEmptyDraft(): DraftCounts {
@@ -236,8 +274,6 @@ function WeeklyBarChart({ bars }: { bars: DailyBar[] }) {
       <View style={styles.chartFrame}>
         {bars.map((bar) => {
           const height = bar.total > 0 ? Math.max((bar.total / maxVal) * 110, 6) : 4;
-          const bypassHeight = bar.total > 0 ? (bar.bypasses / Math.max(bar.total, 1)) * height : 0;
-          const cleanHeight = height - bypassHeight;
           return (
             <View key={bar.label} style={styles.chartColumn}>
               <View style={styles.chartTrack}>
@@ -245,8 +281,7 @@ function WeeklyBarChart({ bars }: { bars: DailyBar[] }) {
                   <View style={styles.chartEmpty} />
                 ) : (
                   <View style={[styles.chartBar, { height }]}>
-                    {bypassHeight > 0 ? <View style={[styles.chartSeg, { height: bypassHeight, backgroundColor: t.colors.warning }]} /> : null}
-                    {cleanHeight > 0 ? <View style={[styles.chartSeg, { height: cleanHeight, backgroundColor: t.colors.primary }]} /> : null}
+                    <View style={[styles.chartSeg, { height, backgroundColor: t.colors.primary }]} />
                   </View>
                 )}
               </View>
@@ -262,10 +297,6 @@ function WeeklyBarChart({ bars }: { bars: DailyBar[] }) {
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: t.colors.primary }]} />
           <Text style={styles.legendText}>ok</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: t.colors.warning }]} />
-          <Text style={styles.legendText}>bypass</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: t.colors.error }]} />
@@ -289,6 +320,7 @@ export default function TutorDashboard({ navigation }: Props) {
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
   const [logFilter, setLogFilter] = useState<LogFilter>('all');
   const [sosHistoryVisible, setSosHistoryVisible] = useState(false);
+  const [studentPickerVisible, setStudentPickerVisible] = useState(false);
 
   const selectedStudent = useMemo(
     () => students.find((student) => student.profile.id === selectedStudentId) ?? students[0] ?? null,
@@ -371,7 +403,7 @@ export default function TutorDashboard({ navigation }: Props) {
 
       const [{ data: profiles, error: profilesError }, { data: wallets, error: walletsError }, { data: logs, error: logsError }] =
         await Promise.all([
-          supabase.from('profiles').select('*').in('id', ids).order('full_name', { ascending: true }),
+          supabase.from('profiles').select('*').in('id', ids).order('username', { ascending: true }),
           supabase.from('wallets').select('*').in('user_id', ids),
           supabase.from('activity_logs').select('*').in('student_id', ids).order('created_at', { ascending: false }).limit(300),
         ]);
@@ -444,6 +476,11 @@ export default function TutorDashboard({ navigation }: Props) {
     setLogFilter('all');
     setSosHistoryVisible(false);
   }, [selectedStudentId]);
+
+  const selectStudent = useCallback((studentId: string) => {
+    setSelectedStudentId(studentId);
+    setStudentPickerVisible(false);
+  }, []);
 
   const updatePaymentMode = useCallback(async (student: StudentState, paymentMode: PaymentMode) => {
     if (!tutorId || student.paymentMode === paymentMode) return;
@@ -603,7 +640,6 @@ export default function TutorDashboard({ navigation }: Props) {
             <KpiCard label="Saldo" value={formatEuro(getBalance(selectedStudent.wallet))} sub={`${selectedStudent.wallet.length} pezzi`} accent={t.colors.primary} cardStyle={[singleColumnCard, compactKpiCard]} valueStyle={compactKpiValue} subStyle={compactKpiSub} />
             <KpiCard label="SOS" value={`${studentStats.sosCount}`} sub="totali inviati" accent={studentStats.sosCount > 0 ? t.colors.error : t.colors.border} cardStyle={[singleColumnCard, compactKpiCard]} valueStyle={compactKpiValue} subStyle={compactKpiSub} />
             <KpiCard label="Pagamenti" value={`${studentStats.totalPayments}`} sub={formatEuro(studentStats.totalVolume)} accent={t.colors.success} cardStyle={[singleColumnCard, compactKpiCard]} valueStyle={compactKpiValue} subStyle={compactKpiSub} />
-            <KpiCard label="Bypass" value={`${studentStats.bypassRate}%`} sub={`${studentStats.bypassCount} usi`} accent={studentStats.bypassCount > 0 ? t.colors.warning : t.colors.border} cardStyle={[singleColumnCard, compactKpiCard]} valueStyle={compactKpiValue} subStyle={compactKpiSub} />
           </View>
         </View>
 
@@ -624,10 +660,6 @@ export default function TutorDashboard({ navigation }: Props) {
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Banconote e monete</Text>
               <Text style={styles.summaryValue}>{walletBreakdown.length} tagli distinti</Text>
-            </View>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Pagamenti con bypass</Text>
-              <Text style={styles.summaryValue}>{studentStats.bypassCount}</Text>
             </View>
           </View>
         </View>
@@ -655,13 +687,12 @@ export default function TutorDashboard({ navigation }: Props) {
       <>
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Statistiche di {selectedStudent.profile.full_name ?? 'studente'}</Text>
+            <Text style={styles.sectionTitle}>Statistiche di @{selectedStudent.profile.username}</Text>
             <BarChart3 size={17} color={t.colors.primary} />
           </View>
           <View style={styles.statsGrid}>
             <KpiCard label="Pagamenti" value={`${studentStats.totalPayments}`} sub={`medio ${formatEuro(studentStats.avgPayment)}`} accent={t.colors.primary} cardStyle={singleColumnCard} />
             <KpiCard label="Volume" value={formatEuro(studentStats.totalVolume)} sub="totale pagato" accent={t.colors.success} cardStyle={singleColumnCard} />
-            <KpiCard label="Bypass" value={`${studentStats.bypassCount}`} sub={`${studentStats.bypassRate}%`} accent={studentStats.bypassCount > 0 ? t.colors.warning : t.colors.border} cardStyle={singleColumnCard} />
             <KpiCard
               label="SOS"
               value={`${studentStats.sosCount}`}
@@ -774,7 +805,7 @@ export default function TutorDashboard({ navigation }: Props) {
                     </View>
                     <Text style={styles.modeHint}>
                       {student.paymentMode === 'fast'
-                        ? 'Priorita a banconote e monete alte. Lo studente puo usare anche "Paga meno".'
+                        ? 'Usa il singolo taglio disponibile subito sopra al prezzo. Esempio: 3,67 euro -> 5 euro.'
                         : 'Cerca il pagamento corretto. Se manca il preciso, copre con la combinazione minima disponibile.'}
                     </Text>
                   </View>
@@ -792,6 +823,8 @@ export default function TutorDashboard({ navigation }: Props) {
     const breakdown = metadataItems(log.metadata);
     const amount = logAmount(log);
     const direction = metadataDirection(log.metadata);
+    const sosPlace = log.kind === 'sos' ? sosLocation(log.metadata) : null;
+    const sosTargetAmount = log.kind === 'sos' ? sosAmount(log.metadata) : null;
     const date = new Date(log.created_at);
     const tagColor = log.kind === 'sos'
       ? t.colors.error
@@ -831,8 +864,33 @@ export default function TutorDashboard({ navigation }: Props) {
                 </View>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Modalita</Text>
-                  <Text style={styles.summaryValue}>{log.used_bypass ? 'Veloce / paga meno' : 'Normale'}</Text>
+                  <Text style={styles.summaryValue}>{log.used_bypass ? 'Veloce' : 'Normale'}</Text>
                 </View>
+              </View>
+            ) : null}
+
+            {log.kind === 'sos' ? (
+              <View style={styles.summaryList}>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Schermata</Text>
+                  <Text style={styles.summaryValue}>{sosScreenLabel(log.metadata)}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Prezzo inserito</Text>
+                  <Text style={styles.summaryValue}>{sosTargetAmount != null ? formatEuro(sosTargetAmount) : 'Non ancora inserito'}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Posizione</Text>
+                  <Text style={styles.summaryValue}>
+                    {sosPlace ? `${sosPlace.latitude.toFixed(5)}, ${sosPlace.longitude.toFixed(5)}` : 'Non disponibile'}
+                  </Text>
+                </View>
+                {sosPlace ? (
+                  <TouchableOpacity style={styles.mapButton} onPress={() => openMaps(sosPlace)} accessibilityRole="button" accessibilityLabel="Apri posizione SOS sulla mappa">
+                    <MapPin size={16} color="#FFFFFF" />
+                    <Text style={styles.mapButtonText}>Apri mappa</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             ) : null}
 
@@ -998,9 +1056,23 @@ export default function TutorDashboard({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <View style={styles.topBar}>
-        <View>
+        <View style={styles.titleBlock}>
           <Text style={styles.appLabel}>PagUp Tutor</Text>
           <Text style={styles.pageTitle}>{tabTitle}</Text>
+          {students.length > 0 ? (
+            <TouchableOpacity
+              style={styles.studentSwitch}
+              onPress={() => setStudentPickerVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Cambia studente selezionato"
+            >
+              <Users size={15} color={t.colors.primary} />
+              <Text style={styles.studentSwitchText} numberOfLines={1}>
+                {selectedStudent ? `@${selectedStudent.profile.username}` : 'Scegli studente'}
+              </Text>
+              <ChevronDown size={15} color={t.colors.primary} />
+            </TouchableOpacity>
+          ) : null}
         </View>
         <View style={styles.topActions}>
           <TouchableOpacity style={styles.iconBtn} onPress={() => { loadDashboard().catch(() => {}); }}>
@@ -1064,9 +1136,54 @@ export default function TutorDashboard({ navigation }: Props) {
               <Text style={styles.emptyInline}>Nessuna richiesta SOS registrata.</Text>
             ) : (
               <View style={styles.logList}>
+                <Text style={styles.sosTapHint}>Tocca una richiesta per vedere schermata, prezzo e posizione.</Text>
                 {sosLogs.map(renderLogRow)}
               </View>
             )}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      <Modal visible={studentPickerVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setStudentPickerVisible(false)}>
+        <SafeAreaView style={styles.sosModalRoot} edges={['top', 'bottom']}>
+          <View style={styles.sosModalHeader}>
+            <View style={styles.sosModalTitleWrap}>
+              <Text style={styles.sosModalTitle}>Cambia studente</Text>
+              <Text style={styles.sosModalSubtitle}>{students.length} profili collegati</Text>
+            </View>
+            <TouchableOpacity style={styles.sosModalClose} onPress={() => setStudentPickerVisible(false)} accessibilityLabel="Chiudi scelta studente">
+              <X size={20} color={t.colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.sosModalContent}>
+            <View style={styles.studentList}>
+              {students.map((student) => {
+                const selected = selectedStudent?.profile.id === student.profile.id;
+                const stats = getStudentStats(student.logs);
+                return (
+                  <TouchableOpacity
+                    key={student.profile.id}
+                    style={[styles.pickerStudentRow, selected && styles.pickerStudentRowSelected]}
+                    onPress={() => selectStudent(student.profile.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Seleziona @${student.profile.username}`}
+                  >
+                    <View style={styles.studentCardText}>
+                      <Text style={[styles.studentCardName, selected && styles.studentCardNameSelected]}>@{student.profile.username}</Text>
+                      <Text style={[styles.studentCardMeta, selected && styles.studentCardMetaSelected]}>
+                        {formatEuro(getBalance(student.wallet))} · {stats.sosCount} SOS
+                      </Text>
+                    </View>
+                    <View style={[styles.pickerModePill, selected && styles.pickerModePillSelected]}>
+                      <Text style={[styles.pickerModeText, selected && styles.pickerModeTextSelected]}>
+                        {student.paymentMode === 'fast' ? 'Veloce' : 'Precisa'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -1104,6 +1221,30 @@ const styles = StyleSheet.create({
   topActions: {
     flexDirection: 'row',
     gap: 8,
+  },
+  titleBlock: {
+    flex: 1,
+    paddingRight: 10,
+    gap: 6,
+  },
+  studentSwitch: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    minHeight: 36,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: t.colors.border,
+    backgroundColor: '#EEF3FA',
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  studentSwitchText: {
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: '800',
+    color: t.colors.primary,
   },
   iconBtn: {
     width: 40,
@@ -1717,6 +1858,60 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 10,
     backgroundColor: '#FFFFFF',
+  },
+  sosTapHint: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: t.colors.textSecondary,
+  },
+  mapButton: {
+    alignSelf: 'flex-start',
+    minHeight: 42,
+    borderRadius: 12,
+    backgroundColor: t.colors.primary,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  mapButtonText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  pickerStudentRow: {
+    minHeight: 72,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: t.colors.border,
+    backgroundColor: '#FBFCFF',
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  pickerStudentRowSelected: {
+    backgroundColor: t.colors.primary,
+    borderColor: t.colors.primary,
+  },
+  pickerModePill: {
+    borderRadius: 999,
+    backgroundColor: t.colors.surfaceVariant,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  pickerModePillSelected: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  pickerModeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: t.colors.textSecondary,
+  },
+  pickerModeTextSelected: {
+    color: '#FFFFFF',
   },
   breakdownList: {
     gap: 8,

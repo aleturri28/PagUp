@@ -43,7 +43,7 @@ describe('paymentLogic', () => {
     expect(result.selectedItems.map((entry) => entry.value)).toEqual([10, 5]);
   });
 
-  it('prioritizes bills in fast mode before coins', () => {
+  it('uses the single immediately higher denomination in fast mode', () => {
     const inventory = [
       item('a', 10),
       item('b', 5),
@@ -53,10 +53,10 @@ describe('paymentLogic', () => {
       item('f', 0.2),
     ];
 
-    const result = calculateStudentPayment(inventory, 13.67, 'fast');
+    const result = calculateStudentPayment(inventory, 3.67, 'fast');
     expect(result.isInsufficient).toBe(false);
-    expect(result.coveredAmount).toBe(15);
-    expect(result.selectedItems.map((entry) => entry.value)).toEqual([10, 5]);
+    expect(result.coveredAmount).toBe(5);
+    expect(result.selectedItems.map((entry) => entry.value)).toEqual([5]);
   });
 
   it('ignores 1, 2 and 5 cent coins when searching combinations', () => {

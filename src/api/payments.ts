@@ -11,6 +11,12 @@ export interface PaymentLogInput {
   selectedItems: MoneyItem[];
 }
 
+export interface SosLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number | null;
+}
+
 async function getTutorIds(studentId: string): Promise<string[]> {
   const { data, error } = await supabase
     .from('tutor_students')
@@ -80,7 +86,12 @@ export async function recordPayment(input: PaymentLogInput): Promise<void> {
   });
 }
 
-export async function sendSos(studentId: string): Promise<void> {
+export async function sendSos(
+  studentId: string,
+  screenName?: string,
+  amount?: number,
+  location?: SosLocation | null,
+): Promise<void> {
   const [tutorIds, studentName] = await Promise.all([
     getTutorIds(studentId),
     getStudentName(studentId),
@@ -93,7 +104,11 @@ export async function sendSos(studentId: string): Promise<void> {
         tutor_id: tutorId,
         kind: 'sos',
         message: `SOS: ${studentName} ha bisogno di aiuto!`,
-        metadata: {},
+        metadata: {
+          screen_name: screenName ?? null,
+          amount: amount ?? null,
+          location: location ?? null,
+        } as unknown as Json,
       }),
     ),
   );

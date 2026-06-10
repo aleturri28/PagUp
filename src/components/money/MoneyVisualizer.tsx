@@ -81,11 +81,6 @@ export function MoneyChip({ item, size = 'medium' }: MoneyChipProps) {
           {formatEuro(item.value)}
         </Text>
       )}
-      {!hasPhoto && isBill && (
-        <Text style={[styles.chipType, chipStyle.typeText, { color: palette.text }]}>
-          BANCONOTA
-        </Text>
-      )}
     </View>
   );
 }
@@ -138,8 +133,7 @@ const SIZE_MAP = {
   small: {
     bill:      { width: 90, height: 56, borderRadius: 8, borderWidth: 3 } as ViewStyle,
     coin:      { width: 56, height: 56, borderRadius: 28, borderWidth: 3 } as ViewStyle,
-    text:      { fontSize: 14, fontWeight: '900' as const },
-    typeText:  { fontSize: 8 },
+    text:      { fontSize: 18, fontWeight: '900' as const },
     imageBill: { width: 80, height: 46 },
     imageCoin: { width: 46, height: 46 },
     photoBill: { width: 90, height: 56 },
@@ -149,7 +143,6 @@ const SIZE_MAP = {
     bill:      { width: 130, height: 80, borderRadius: 12, borderWidth: 3 } as ViewStyle,
     coin:      { width: 80, height: 80, borderRadius: 40, borderWidth: 3 } as ViewStyle,
     text:      { fontSize: 20, fontWeight: '900' as const },
-    typeText:  { fontSize: 10 },
     imageBill: { width: 118, height: 68 },
     imageCoin: { width: 68, height: 68 },
     photoBill: { width: 130, height: 80 },
@@ -159,7 +152,6 @@ const SIZE_MAP = {
     bill:      { width: 170, height: 104, borderRadius: 16, borderWidth: 4 } as ViewStyle,
     coin:      { width: 104, height: 104, borderRadius: 52, borderWidth: 4 } as ViewStyle,
     text:      { fontSize: 28, fontWeight: '900' as const },
-    typeText:  { fontSize: 11 },
     imageBill: { width: 154, height: 90 },
     imageCoin: { width: 90, height: 90 },
     photoBill: { width: 170, height: 104 },
@@ -203,13 +195,6 @@ const styles = StyleSheet.create({
   chipValue: {
     fontWeight: '900',
     textAlign: 'center',
-  },
-  chipType: {
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-    marginTop: 2,
-    opacity: 0.85,
   },
   emptyContainer: {
     padding: 20,

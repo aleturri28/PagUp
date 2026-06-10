@@ -12,6 +12,7 @@ import { useWalletStore } from '../../store/useWalletStore';
 import { MoneyItem } from '../../api/database.types';
 import { formatEuro } from '../../utils/paymentLogic';
 import { getMoneyImageUri } from '../../constants/moneyImages';
+import { studentTheme as t } from '../../theme';
 
 // Importo di test per il pulsante "Paga"
 const TEST_PAYMENT_AMOUNT = 12.5;
@@ -213,7 +214,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   statsText: {
-    fontSize: 16,
+    fontSize: t.typography.sizeSM,
     fontWeight: '600',
     color: '#1A1A1A',
   },
@@ -226,13 +227,13 @@ const styles = StyleSheet.create({
     borderLeftColor: '#2980B9',
   },
   previewTitle: {
-    fontSize: 14,
+    fontSize: t.typography.sizeSM,
     fontWeight: '700',
     color: '#1A5276',
     marginBottom: 4,
   },
   previewText: {
-    fontSize: 14,
+    fontSize: t.typography.sizeSM,
     color: '#1A5276',
   },
   list: {
@@ -251,7 +252,7 @@ const styles = StyleSheet.create({
     minHeight: 120,
   },
   cardSelected: {
-    borderColor: '#27AE60',
+    borderColor: t.colors.success,
     backgroundColor: '#EAFAF1',
   },
   imagePlaceholder: {
@@ -282,8 +283,8 @@ const styles = StyleSheet.create({
     color: '#1A1A1A',
   },
   cardType: {
-    fontSize: 12,
-    color: '#666666',
+    fontSize: t.typography.sizeSM,
+    color: t.colors.textSecondary,
     marginTop: 2,
   },
   selectedBadge: {
@@ -293,19 +294,19 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#27AE60',
+    backgroundColor: t.colors.success,
     justifyContent: 'center',
     alignItems: 'center',
   },
   selectedBadgeText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: t.typography.sizeSM,
     fontWeight: '700',
   },
   emptyText: {
     textAlign: 'center',
-    color: '#888888',
-    fontSize: 16,
+    color: t.colors.textSecondary,
+    fontSize: t.typography.sizeSM,
     marginTop: 40,
   },
   controls: {
@@ -313,7 +314,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   btnPay: {
-    backgroundColor: '#27AE60',
+    backgroundColor: t.colors.success,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -330,12 +331,12 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
-    minHeight: 48,
+    minHeight: t.spacing.touchTarget,
     justifyContent: 'center',
   },
   btnSecondaryText: {
     color: '#1A1A1A',
-    fontSize: 16,
+    fontSize: t.typography.sizeSM,
     fontWeight: '600',
   },
   btnBypass: {
@@ -345,7 +346,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#E67E22',
-    minHeight: 48,
+    minHeight: t.spacing.touchTarget,
     justifyContent: 'center',
   },
   btnBypassActive: {
@@ -354,7 +355,7 @@ const styles = StyleSheet.create({
   },
   btnBypassText: {
     color: '#784212',
-    fontSize: 16,
+    fontSize: t.typography.sizeSM,
     fontWeight: '600',
   },
 });

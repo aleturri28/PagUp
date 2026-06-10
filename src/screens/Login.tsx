@@ -14,7 +14,7 @@ import {
   View,
 } from 'react-native';
 import { StackScreenProps } from '@react-navigation/stack';
-import { ArrowRight, LockKeyhole, Mail, Sparkles } from 'lucide-react-native';
+import { ArrowRight, LockKeyhole, Mail } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../navigation/types';
 import { signInWithPassword } from '../api/auth';
@@ -63,7 +63,6 @@ export default function Login({ navigation }: Props) {
           <View style={[styles.shell, compact && styles.shellCompact]}>
             <View style={styles.hero}>
               <View style={styles.brandBadge}>
-                <Sparkles size={20} color="#FFFFFF" />
                 <Text style={styles.brandBadgeText}>PagUp</Text>
               </View>
               <View style={styles.heroIcon}>
@@ -71,7 +70,7 @@ export default function Login({ navigation }: Props) {
               </View>
               <Text style={[styles.title, compact && styles.titleCompact]}>Accedi al tuo spazio</Text>
               <Text style={styles.subtitle}>
-                Studente e tutor entrano dallo stesso punto. L’app apre subito la sezione corretta.
+                Accedi qui. L'app ti guiderà automaticamente nella tua area.
               </Text>
             </View>
 

@@ -390,7 +390,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     color: t.colors.textSecondary,
-    fontSize: 16,
+    fontSize: t.typography.sizeSM,
     fontWeight: t.typography.weightSemiBold,
   },
   unpairedContent: {
@@ -424,9 +424,9 @@ const styles = StyleSheet.create({
     fontWeight: t.typography.weightBold,
   },
   unpairedText: {
-    color: 'rgba(255,255,255,0.88)',
-    fontSize: 15,
-    lineHeight: 22,
+    color: t.colors.onPrimary,
+    fontSize: t.typography.sizeSM,
+    lineHeight: t.typography.sizeSM * t.typography.lineHeightBody,
     fontWeight: t.typography.weightMedium,
   },
   unpairedCard: {
@@ -451,8 +451,8 @@ const styles = StyleSheet.create({
   },
   unpairedQrText: {
     color: t.colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: t.typography.sizeSM,
+    lineHeight: t.typography.sizeSM * t.typography.lineHeightBody,
     textAlign: 'center',
   },
   unpairedPrimaryAction: {
@@ -468,7 +468,7 @@ const styles = StyleSheet.create({
   },
   unpairedPrimaryActionText: {
     color: t.colors.onPrimary,
-    fontSize: 16,
+    fontSize: t.typography.sizeSM,
     fontWeight: t.typography.weightBold,
   },
   topRow: {
@@ -520,8 +520,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pinClose: {
-    width: 42,
-    height: 42,
+    width: t.spacing.touchTarget,
+    height: t.spacing.touchTarget,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
@@ -533,8 +533,8 @@ const styles = StyleSheet.create({
   },
   pinText: {
     color: t.colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 21,
+    fontSize: t.typography.sizeSM,
+    lineHeight: t.typography.sizeSM * t.typography.lineHeightBody,
     fontWeight: t.typography.weightMedium,
   },
   pinInput: {
@@ -558,7 +558,7 @@ const styles = StyleSheet.create({
   },
   pinSubmitText: {
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: t.typography.sizeSM,
     fontWeight: t.typography.weightBold,
   },
   balanceCard: {
@@ -659,8 +659,8 @@ const styles = StyleSheet.create({
     fontWeight: t.typography.weightBold,
   },
   modalClose: {
-    width: 42,
-    height: 42,
+    width: t.spacing.touchTarget,
+    height: t.spacing.touchTarget,
     borderRadius: t.radius.lg,
     backgroundColor: t.colors.background,
     alignItems: 'center',
@@ -688,8 +688,8 @@ const styles = StyleSheet.create({
   },
   qrModalText: {
     color: t.colors.textSecondary,
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: t.typography.sizeSM,
+    lineHeight: t.typography.sizeSM * t.typography.lineHeightBody,
     textAlign: 'center',
   },
 });

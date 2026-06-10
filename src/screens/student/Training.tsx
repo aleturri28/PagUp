@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, Banknote, CheckCircle2, CircleDollarSign, Minus, PartyPopper, Plus, RefreshCcw, Sparkles } from 'lucide-react-native';
+import { ArrowLeft, Banknote, CheckCircle2, CircleDollarSign, Minus, PartyPopper, Plus, RefreshCcw } from 'lucide-react-native';
 import { StackScreenProps } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
 import { MoneyChip } from '../../components/money/MoneyVisualizer';
@@ -63,9 +63,22 @@ function hintFor(target: number, selectedTotal: number): string {
 export default function Training({ navigation }: Props) {
   const [target, setTarget] = useState(createTarget);
   const [counts, setCounts] = useState<CountMap>({});
-  const [feedback, setFeedback] = useState('Scegli i tagli dalla cassa di prova.');
+  const [feedback, setFeedback] = useState('');
   const [success, setSuccess] = useState(false);
   const celebration = useSharedValue(0);
+  const bannerOpacity = useSharedValue(0);
+  const bannerTranslateY = useSharedValue(-12);
+
+  const stickyBannerStyle = useAnimatedStyle(() => ({
+    opacity: bannerOpacity.value,
+    transform: [{ translateY: bannerTranslateY.value }],
+  }));
+
+  const handleScroll = useCallback((event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    const visible = event.nativeEvent.contentOffset.y > 130;
+    bannerOpacity.value = withTiming(visible ? 1 : 0, { duration: 200 });
+    bannerTranslateY.value = withTiming(visible ? 0 : -12, { duration: 200 });
+  }, [bannerOpacity, bannerTranslateY]);
 
   const selectedTotal = useMemo(() => totalFromCounts(counts), [counts]);
   const selectedItems = useMemo(() => buildSelectedItems(counts), [counts]);
@@ -151,24 +164,35 @@ export default function Training({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <Animated.View pointerEvents="none" style={[styles.stickyAmountBanner, stickyBannerStyle]}>
+        <View style={styles.stickyAmountGroup}>
+          <Text style={styles.stickyAmountLabel}>Da pagare</Text>
+          <Text style={styles.stickyAmountValue} numberOfLines={1} adjustsFontSizeToFit>{formatEuro(target)}</Text>
+        </View>
+        <View style={[styles.stickyAmountGroup, styles.stickyAmountGroupRight]}>
+          <Text style={styles.stickyAmountLabel}>Hai messo</Text>
+          <Text style={styles.stickyAmountValue} numberOfLines={1} adjustsFontSizeToFit>{formatEuro(selectedTotal)}</Text>
+        </View>
+      </Animated.View>
+
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+      >
         <Animated.View style={[styles.heroCard, success && styles.heroCardSuccess, celebrationStyle]}>
           <View style={styles.heroTop}>
             <View style={styles.heroBadge}>
               {success
                 ? <CheckCircle2 size={24} color={t.colors.onSuccess} />
-                : <Sparkles size={24} color={t.colors.onPrimary} />}
+                : <Banknote size={24} color={t.colors.onPrimary} />}
             </View>
             <View style={styles.heroCopy}>
               <Text style={styles.heroEyebrow}>Importo da comporre</Text>
               <Text style={styles.heroAmount}>{formatEuro(target)}</Text>
             </View>
           </View>
-          <Text style={styles.heroBody}>
-            {success
-              ? 'Cifra completata correttamente. Puoi passare subito al prossimo esercizio.'
-              : 'Usa la cassa di prova qui sotto e cerca di arrivare al totale esatto senza resto.'}
-          </Text>
         </Animated.View>
 
         <View style={styles.statusRow}>
@@ -197,18 +221,13 @@ export default function Training({ navigation }: Props) {
             <Text style={styles.successBannerText}>Bravo, pagamento corretto.</Text>
             <PartyPopper size={22} color={t.colors.onSuccess} />
           </Animated.View>
-        ) : (
-          <Animated.View entering={FadeIn.duration(180)} style={styles.feedbackCard}>
-            <Text style={styles.feedbackTitle}>Suggerimento</Text>
-            <Text style={styles.feedbackText}>{feedback}</Text>
-          </Animated.View>
-        )}
+        ) : null}
 
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
               <Text style={styles.sectionTitle}>Cassa di prova</Text>
-              <Text style={styles.sectionHint}>Scegli i tagli da usare. Non modifichi il portafoglio reale.</Text>
+              <Text style={styles.sectionHint}>Scegli monete e banconote.</Text>
             </View>
             <View style={styles.sectionIconWrap}>
               <Banknote size={18} color={t.colors.primary} />
@@ -260,7 +279,7 @@ export default function Training({ navigation }: Props) {
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
               <Text style={styles.sectionTitle}>Sul banco</Text>
-              <Text style={styles.sectionHint}>Qui vedi i tagli selezionati per il pagamento di prova.</Text>
+              <Text style={styles.sectionHint}>{feedback || 'Totale scelto sul banco.'}</Text>
             </View>
             <TouchableOpacity
               style={styles.clearButton}
@@ -282,7 +301,6 @@ export default function Training({ navigation }: Props) {
             <View style={styles.emptyState}>
               <CircleDollarSign size={22} color={t.colors.textSecondary} />
               <Text style={styles.emptyTitle}>Nessun taglio selezionato</Text>
-              <Text style={styles.emptyBody}>Aggiungi monete o banconote dalla cassa di prova per iniziare.</Text>
             </View>
           )}
         </View>
@@ -327,8 +345,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   iconButton: {
-    width: 40,
-    height: 40,
+    width: t.spacing.touchTarget,
+    height: t.spacing.touchTarget,
     borderRadius: 10,
     backgroundColor: '#EEF3FA',
     alignItems: 'center',
@@ -340,11 +358,12 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   kicker: {
-    fontSize: 12,
+    fontSize: t.typography.sizeSM,
     fontWeight: '800',
     color: t.colors.primary,
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    letterSpacing: 0,
+    textAlign: 'center',
   },
   topTitle: {
     fontSize: 22,
@@ -356,6 +375,43 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 28,
     gap: 14,
+  },
+  stickyAmountBanner: {
+    position: 'absolute',
+    top: 82,
+    left: 16,
+    right: 16,
+    zIndex: 20,
+    minHeight: 64,
+    borderRadius: 14,
+    backgroundColor: '#082C6C',
+    borderWidth: 1,
+    borderColor: '#C7D7F3',
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  stickyAmountGroup: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  stickyAmountGroupRight: {
+    alignItems: 'flex-end',
+  },
+  stickyAmountLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+  },
+  stickyAmountValue: {
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '900',
+    color: '#FFFFFF',
   },
   heroCard: {
     borderRadius: 18,
@@ -384,9 +440,9 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   heroEyebrow: {
-    fontSize: 14,
+    fontSize: t.typography.sizeSM,
     fontWeight: '700',
-    color: 'rgba(255,255,255,0.8)',
+    color: '#FFFFFF',
   },
   heroAmount: {
     fontSize: 36,
@@ -395,9 +451,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   heroBody: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: 'rgba(255,255,255,0.88)',
+    fontSize: t.typography.sizeSM,
+    lineHeight: t.typography.sizeSM * t.typography.lineHeightBody,
+    color: '#FFFFFF',
   },
   statusRow: {
     flexDirection: 'row',
@@ -421,7 +477,7 @@ const styles = StyleSheet.create({
     borderColor: '#E6B0B0',
   },
   metricLabel: {
-    fontSize: 13,
+    fontSize: t.typography.sizeSM,
     fontWeight: '800',
     color: t.colors.textSecondary,
     textTransform: 'uppercase',
@@ -433,8 +489,8 @@ const styles = StyleSheet.create({
     color: t.colors.text,
   },
   metricSub: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: t.typography.sizeSM,
+    lineHeight: t.typography.sizeSM * t.typography.lineHeightBody,
     color: t.colors.textSecondary,
   },
   successBanner: {
@@ -449,7 +505,7 @@ const styles = StyleSheet.create({
   },
   successBannerText: {
     flex: 1,
-    fontSize: 16,
+    fontSize: t.typography.sizeSM,
     fontWeight: '800',
     color: t.colors.onSuccess,
     textAlign: 'center',
@@ -463,14 +519,14 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   feedbackTitle: {
-    fontSize: 13,
+    fontSize: t.typography.sizeSM,
     fontWeight: '800',
     color: t.colors.warning,
     textTransform: 'uppercase',
   },
   feedbackText: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: t.typography.sizeSM,
+    lineHeight: t.typography.sizeSM * t.typography.lineHeightBody,
     fontWeight: '600',
     color: t.colors.text,
   },
@@ -498,8 +554,8 @@ const styles = StyleSheet.create({
     color: t.colors.text,
   },
   sectionHint: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: t.typography.sizeSM,
+    lineHeight: t.typography.sizeSM * t.typography.lineHeightBody,
     color: t.colors.textSecondary,
   },
   sectionIconWrap: {
@@ -515,6 +571,7 @@ const styles = StyleSheet.create({
   },
   denomCard: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
@@ -535,22 +592,23 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   denomValue: {
-    fontSize: 16,
+    fontSize: t.typography.sizeSM,
     fontWeight: '800',
     color: t.colors.text,
   },
   denomCaption: {
-    fontSize: 13,
+    fontSize: t.typography.sizeSM,
     color: t.colors.textSecondary,
   },
   stepper: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginLeft: 'auto',
   },
   stepperButton: {
-    width: 34,
-    height: 34,
+    width: t.spacing.touchTarget,
+    height: t.spacing.touchTarget,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#D8DFEC',
@@ -566,14 +624,14 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   stepperCount: {
-    minWidth: 24,
+    minWidth: 32,
     textAlign: 'center',
-    fontSize: 16,
+    fontSize: t.typography.sizeSM,
     fontWeight: '800',
     color: t.colors.text,
   },
   clearButton: {
-    minHeight: 40,
+    minHeight: t.spacing.touchTarget,
     borderRadius: 12,
     backgroundColor: '#EEF3FA',
     alignItems: 'center',
@@ -581,7 +639,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   clearButtonText: {
-    fontSize: 14,
+    fontSize: t.typography.sizeSM,
     fontWeight: '800',
     color: t.colors.text,
   },
@@ -600,14 +658,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   emptyTitle: {
-    fontSize: 16,
+    fontSize: t.typography.sizeSM,
     fontWeight: '800',
     color: t.colors.text,
     textAlign: 'center',
   },
   emptyBody: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: t.typography.sizeSM,
+    lineHeight: t.typography.sizeSM * t.typography.lineHeightBody,
     color: t.colors.textSecondary,
     textAlign: 'center',
   },
@@ -626,7 +684,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   secondaryButtonText: {
-    fontSize: 16,
+    fontSize: t.typography.sizeSM,
     fontWeight: '800',
     color: t.colors.text,
   },
@@ -640,7 +698,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   primaryButtonText: {
-    fontSize: 16,
+    fontSize: t.typography.sizeSM,
     fontWeight: '800',
     color: t.colors.onPrimary,
   },

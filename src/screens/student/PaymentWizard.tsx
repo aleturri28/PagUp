@@ -8,7 +8,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Image,
   Linking,
   useWindowDimensions,
 } from 'react-native';
@@ -31,7 +30,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { CameraView } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, AlertCircle, Banknote, CheckCircle, Camera, Home, Keyboard, Mic, X, LifeBuoy } from 'lucide-react-native';
+import * as Location from 'expo-location';
+import { ArrowLeft, AlertCircle, CheckCircle, Camera, Home, Keyboard, Mic, X, LifeBuoy } from 'lucide-react-native';
 import { useWalletStore } from '../../store/useWalletStore';
 import { formatEuro, calculateStudentPayment, PaymentMode } from '../../utils/paymentLogic';
 import { MoneyItem } from '../../api/database.types';
@@ -42,19 +42,12 @@ import { sendSos } from '../../api/payments';
 import { studentTheme as t } from '../../theme';
 import { StackScreenProps } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
-import { getMoneyImageUri } from '../../constants/moneyImages';
+import { MoneyChip } from '../../components/money/MoneyVisualizer';
 
 // ============================================================
 // TIPI E COSTANTI
 // ============================================================
 type WizardStep = 'amount' | 'confirm' | 'instructions' | 'change';
-
-const BYPASS_BILLS: MoneyItem[] = [
-  { id: 'bypass-5',  value: 5,  type: 'bill', imageUri: '' },
-  { id: 'bypass-10', value: 10, type: 'bill', imageUri: '' },
-  { id: 'bypass-20', value: 20, type: 'bill', imageUri: '' },
-  { id: 'bypass-50', value: 50, type: 'bill', imageUri: '' },
-];
 
 // Direzione animazione: avanzamento = da destra, arretramento = da sinistra.
 type Direction = 'forward' | 'backward';
@@ -319,7 +312,7 @@ const cameraStyles = StyleSheet.create({
   },
   subHint: {
     marginTop: 6,
-    color: 'rgba(255,255,255,0.85)',
+    color: '#FFFFFF',
     fontSize: t.typography.sizeSM,
     textAlign: 'center',
   },
@@ -675,7 +668,7 @@ function StepAmount({ amount, onAmountChange, onConfirm }: StepAmountProps) {
           accessibilityLabel={`Importo: ${displayValue}`}
           accessibilityHint="Mostra l'importo che stai inserendo con il tastierino"
         >
-          <Text style={styles.amountLabel}>Quanto devi pagare</Text>
+          <Text style={styles.amountLabel}>Importo</Text>
           <Text style={styles.amountValue} numberOfLines={1} adjustsFontSizeToFit>
             {displayValue}
           </Text>
@@ -746,7 +739,6 @@ function StepAmount({ amount, onAmountChange, onConfirm }: StepAmountProps) {
             >
               <Camera size={52} color={t.colors.primary} />
               <Text style={styles.altTabBtnLabel}>Inquadra lo scontrino</Text>
-              <Text style={styles.altTabBtnHint}>Punta verso il totale e scatta la foto.</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -768,9 +760,7 @@ function StepAmount({ amount, onAmountChange, onConfirm }: StepAmountProps) {
                 {voice.isListening ? 'Sto ascoltando...' : 'Parla adesso'}
               </Text>
               <Text style={styles.altTabBtnHint}>
-                {voice.isListening
-                  ? 'Premi per fermare.'
-                  : "Di' ad esempio: quindici euro e cinquanta."}
+                {voice.isListening ? 'Premi per fermare.' : ''}
               </Text>
             </TouchableOpacity>
           </View>
@@ -877,25 +867,13 @@ interface StepInstructionsProps {
 }
 
 function MoneyPhotoRow({ item }: { item: MoneyItem }) {
-  const uri = item.imageUri || getMoneyImageUri(item.value);
   return (
     <View
       style={styles.moneyPhotoRow}
       accessible
       accessibilityLabel={`${item.type === 'bill' ? 'Banconota' : 'Moneta'} da ${formatEuro(item.value)}`}
     >
-      <View style={[styles.moneyPhotoStage, item.type === 'coin' && styles.moneyCoinStage]}>
-        {uri ? (
-          <Image
-            source={{ uri }}
-            style={item.type === 'bill' ? styles.moneyBillImage : styles.moneyCoinImage}
-            resizeMode="contain"
-            accessible={false}
-          />
-        ) : (
-          <Text style={styles.moneyFallbackText}>{formatEuro(item.value)}</Text>
-        )}
-      </View>
+      <MoneyChip item={item} size="small" />
     </View>
   );
 }
@@ -903,14 +881,10 @@ function MoneyPhotoRow({ item }: { item: MoneyItem }) {
 function StepInstructions({ total, onContinue, onBack, paymentMode, compact }: StepInstructionsProps) {
   const inventory = useWalletStore((s) => s.inventory);
   const processRealPayment = useWalletStore((s) => s.processRealPayment);
-  const toggleBypass = useWalletStore((s) => s.toggleBypass);
-  const isBypassActive = useWalletStore((s) => s.isBypassActive);
 
-  const [bypassModalVisible, setBypassModalVisible] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
 
   const result = calculateStudentPayment(inventory, total, paymentMode);
-  const canPayLess = paymentMode === 'fast';
 
   const handleContinue = useCallback(async () => {
     setIsCompleting(true);
@@ -924,29 +898,6 @@ function StepInstructions({ total, onContinue, onBack, paymentMode, compact }: S
       setIsCompleting(false);
     }
   }, [paymentMode, processRealPayment, total, onContinue]);
-
-  const handleBypassSelect = useCallback(
-    async (bill: MoneyItem) => {
-      setBypassModalVisible(false);
-      if (!isBypassActive) toggleBypass();
-      setIsCompleting(true);
-      try {
-        const payResult = await processRealPayment(total, bill.value);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        onContinue(payResult.coveredAmount);
-      } catch (error) {
-        Alert.alert('Pagamento non registrato', error instanceof Error ? error.message : 'Riprova tra poco.');
-      } finally {
-        setIsCompleting(false);
-      }
-    },
-    [isBypassActive, processRealPayment, toggleBypass, total, onContinue],
-  );
-
-  const handleOpenBypass = useCallback(() => {
-    setBypassModalVisible(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
 
   return (
     <Animated.View
@@ -962,12 +913,12 @@ function StepInstructions({ total, onContinue, onBack, paymentMode, compact }: S
           <View style={styles.insufficientBox}>
             <AlertCircle size={36} color={t.colors.error} />
             <Text style={styles.insufficientText}>
-              Non hai abbastanza soldi nel portafoglio.{'\n'}Usa il tasto qui sotto.
+              Non hai abbastanza soldi nel portafoglio.
             </Text>
           </View>
         ) : (
           <View style={styles.instructionCard}>
-            <Text style={[styles.instructionTitle, compact && styles.instructionTitleCompact]}>Usa questi soldi:</Text>
+            <Text style={[styles.instructionTitle, compact && styles.instructionTitleCompact]}>Dai questi soldi</Text>
             <View style={styles.instructionDivider} />
             <View style={styles.moneyPhotoList}>
               {result.selectedItems.map((item) => (
@@ -980,7 +931,7 @@ function StepInstructions({ total, onContinue, onBack, paymentMode, compact }: S
               accessible
               accessibilityLabel={`Totale da dare ${formatEuro(result.coveredAmount)}`}
             >
-              <Text style={[styles.coverageTotalLabel, compact && styles.coverageTotalLabelCompact]}>Totale da dare:</Text>
+              <Text style={[styles.coverageTotalLabel, compact && styles.coverageTotalLabelCompact]}>Totale</Text>
               <Text style={[styles.coverageTotalValue, compact && styles.coverageTotalValueCompact]}>{formatEuro(result.coveredAmount).replace('€', '').trim()}{'\n'}€</Text>
             </View>
           </View>
@@ -1006,65 +957,7 @@ function StepInstructions({ total, onContinue, onBack, paymentMode, compact }: S
           </TouchableOpacity>
         )}
 
-        {canPayLess && (
-          <TouchableOpacity
-            style={[styles.btnBypass, compact && styles.btnBypassCompact]}
-            onPress={handleOpenBypass}
-            accessible
-            accessibilityLabel="Paga meno"
-            accessibilityHint="Apre la scelta di una banconota alternativa da usare per pagare"
-            accessibilityRole="button"
-          >
-            <Banknote size={24} color="#17181A" />
-            <Text style={[styles.btnBypassText, compact && styles.btnBypassTextCompact]}>Paga meno</Text>
-          </TouchableOpacity>
-        )}
       </ScrollView>
-
-      {/* Modal selezione banconota bypass */}
-      <Modal
-        visible={bypassModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setBypassModalVisible(false)}
-        accessibilityViewIsModal
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Quale banconota usi?</Text>
-            <Text style={styles.modalSubtitle}>
-              Scegli la banconota che stai per dare alla cassa:
-            </Text>
-
-            <View style={styles.modalBills}>
-              {BYPASS_BILLS.map((bill) => (
-                <TouchableOpacity
-                  key={bill.id}
-                  style={styles.modalBill}
-                  onPress={() => { handleBypassSelect(bill).catch(() => {}); }}
-                  accessible
-                  accessibilityLabel={`Banconota da ${formatEuro(bill.value)}`}
-                  accessibilityHint="Seleziona questa banconota per il pagamento"
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.modalBillText}>{formatEuro(bill.value)}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <TouchableOpacity
-              style={styles.modalCancel}
-              onPress={() => setBypassModalVisible(false)}
-              accessible
-              accessibilityLabel="Annulla"
-              accessibilityHint="Chiude questo pannello senza selezionare una banconota"
-              accessibilityRole="button"
-            >
-              <Text style={styles.modalCancelText}>Annulla</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </Animated.View>
   );
 }
@@ -1081,8 +974,19 @@ interface StepChangeProps {
 }
 
 function StepChange({ total, coveredAmount, onFinish, compact }: StepChangeProps) {
+  const { width, height } = useWindowDimensions();
   const change = Math.max(0, Math.round((coveredAmount - total) * 100) / 100);
   const displayChange = formatEuro(change);
+  const availableHeight = Math.max(height - 170, 480);
+  const short = availableHeight < 650;
+  const veryShort = availableHeight < 560;
+  const landscape = width > height;
+  const successContentWidth = Math.min(width - (compact ? 32 : 48), 520);
+  const iconSize = landscape ? 96 : veryShort ? 112 : short ? 132 : compact ? 144 : 158;
+  const iconInnerSize = Math.round(iconSize * 0.52);
+  const checkSize = Math.round(iconInnerSize * 0.84);
+  const iconMargin = landscape ? 4 : veryShort ? 6 : short ? 8 : 12;
+  const finishIconSize = veryShort ? 22 : compact ? 24 : 26;
 
   return (
     <Animated.View
@@ -1093,34 +997,83 @@ function StepChange({ total, coveredAmount, onFinish, compact }: StepChangeProps
       accessibilityLabel={`Ricevi ${displayChange} di resto`}
       accessibilityHint="Il pagamento è andato a buon fine"
     >
-      <BackButton onPress={onFinish} variant="success" />
+      <View style={[styles.successFrame, { width: successContentWidth }]}>
+        <View style={styles.successTopRow}>
+          <BackButton onPress={onFinish} variant="success" />
+        </View>
 
-      <Text style={[styles.successTitle, compact && styles.successTitleCompact]}>Pagamento{'\n'}completato</Text>
+        <View style={[styles.successContent, veryShort && styles.successContentTiny]}>
+          <Text style={[
+            styles.successTitle,
+            compact && styles.successTitleCompact,
+            veryShort && styles.successTitleTiny,
+          ]}>
+            Pagamento{'\n'}completato
+          </Text>
 
-      <View style={[styles.successIconCircle, compact && styles.successIconCircleCompact]}>
-        <View style={[styles.successIconInner, compact && styles.successIconInnerCompact]}>
-          <CheckCircle size={compact ? 82 : 108} color="#FFFFFF" strokeWidth={2.1} />
+          <View
+            style={[
+              styles.successIconCircle,
+              {
+                width: iconSize,
+                height: iconSize,
+                borderRadius: iconSize / 2,
+                marginVertical: iconMargin,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.successIconInner,
+                {
+                  width: iconInnerSize,
+                  height: iconInnerSize,
+                  borderRadius: iconInnerSize / 2,
+                },
+              ]}
+            >
+              <CheckCircle size={checkSize} color="#FFFFFF" strokeWidth={2.1} />
+            </View>
+          </View>
+
+          <Text style={[
+            styles.successSubtitle,
+            compact && styles.successSubtitleCompact,
+            veryShort && styles.successSubtitleTiny,
+          ]}>
+            Fatto.
+          </Text>
+
+          <View style={[styles.changeRestoCard, short && styles.changeRestoCardShort, veryShort && styles.changeRestoCardTiny]}>
+            <Text style={[styles.changeRestoLabel, compact && styles.changeRestoLabelCompact]}>Il tuo resto:</Text>
+            <Text
+              style={[styles.changeRestoAmount, compact && styles.changeRestoAmountCompact, veryShort && styles.changeRestoAmountTiny]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {displayChange}
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.btnFinish, short && styles.btnFinishShort, compact && styles.btnFinishCompact, veryShort && styles.btnFinishTiny]}
+            onPress={onFinish}
+            accessible
+            accessibilityLabel="Torna alla Home"
+            accessibilityHint="Torna alla schermata iniziale per iniziare un nuovo pagamento"
+            accessibilityRole="button"
+          >
+            <Home size={finishIconSize} color={t.colors.success} />
+            <Text
+              style={[styles.btnFinishText, compact && styles.btnFinishTextCompact, veryShort && styles.btnFinishTextTiny]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              Torna alla Home
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
-
-      <Text style={[styles.successSubtitle, compact && styles.successSubtitleCompact]}>Pagamento riuscito con successo.</Text>
-
-      <View style={styles.changeRestoCard}>
-        <Text style={[styles.changeRestoLabel, compact && styles.changeRestoLabelCompact]}>Il tuo resto:</Text>
-        <Text style={[styles.changeRestoAmount, compact && styles.changeRestoAmountCompact]}>{displayChange}</Text>
-      </View>
-
-      <TouchableOpacity
-        style={[styles.btnFinish, compact && styles.btnFinishCompact]}
-        onPress={onFinish}
-        accessible
-        accessibilityLabel="Torna alla Home"
-        accessibilityHint="Torna alla schermata iniziale per iniziare un nuovo pagamento"
-        accessibilityRole="button"
-      >
-        <Home size={compact ? 24 : 28} color="#1D7A45" />
-        <Text style={[styles.btnFinishText, compact && styles.btnFinishTextCompact]}>Torna alla Home</Text>
-      </TouchableOpacity>
     </Animated.View>
   );
 }
@@ -1221,7 +1174,22 @@ export default function PaymentWizard({ navigation }: Props) {
     if (!studentId || isSendingSos) return;
     setIsSendingSos(true);
     try {
-      await sendSos(studentId);
+      let sosLocation = null;
+      try {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (permission.status === Location.PermissionStatus.GRANTED) {
+          const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          sosLocation = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+          };
+        }
+      } catch (locationError) {
+        console.warn('[PaymentWizard] Posizione SOS non disponibile:', locationError);
+      }
+
+      await sendSos(studentId, step, total > 0 ? total : undefined, sosLocation);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       Alert.alert('SOS inviato', 'Il tutor ha ricevuto una richiesta di aiuto.');
     } catch (error) {
@@ -1229,7 +1197,7 @@ export default function PaymentWizard({ navigation }: Props) {
     } finally {
       setIsSendingSos(false);
     }
-  }, [isSendingSos, studentId]);
+  }, [isSendingSos, step, studentId, total]);
 
   // Le animazioni entering/exiting variano in base alla direzione.
   const entering = direction === 'forward' ? SlideInRight.duration(280) : SlideInLeft.duration(280);
@@ -1237,8 +1205,8 @@ export default function PaymentWizard({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-      {step === 'amount' ? (
-        <View style={styles.headerRow}>
+      <View style={styles.headerRow}>
+        {step === 'amount' ? (
           <TouchableOpacity
             style={styles.headerIconBtn}
             onPress={() => navigation.goBack()}
@@ -1247,20 +1215,22 @@ export default function PaymentWizard({ navigation }: Props) {
           >
             <ArrowLeft size={24} color={t.colors.primary} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.sosButton, (!studentId || isSendingSos) && styles.sosButtonDisabled]}
-            onPress={() => { handleSos().catch(() => {}); }}
-            disabled={!studentId || isSendingSos}
-            accessible
-            accessibilityLabel="Chiedi aiuto al tutor"
-            accessibilityHint="Invia una notifica urgente al tuo tutor per chiedere assistenza"
-            accessibilityRole="button"
-          >
-            <LifeBuoy size={20} color="#FFFFFF" />
-            <Text style={styles.sosButtonText}>{isSendingSos ? 'Invio...' : 'Aiuto'}</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
+        ) : (
+          <View style={styles.headerIconBtn} />
+        )}
+        <TouchableOpacity
+          style={[styles.sosButton, (!studentId || isSendingSos) && styles.sosButtonDisabled]}
+          onPress={() => { handleSos().catch(() => {}); }}
+          disabled={!studentId || isSendingSos}
+          accessible
+          accessibilityLabel="Chiedi aiuto al tutor"
+          accessibilityHint="Invia una notifica urgente al tuo tutor per chiedere assistenza"
+          accessibilityRole="button"
+        >
+          <LifeBuoy size={20} color="#FFFFFF" />
+          <Text style={styles.sosButtonText}>{isSendingSos ? 'Invio...' : 'Aiuto'}</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Il key forza React a rimontare il componente ad ogni step change,
           attivando le animazioni entering/exiting di Reanimated. */}
@@ -1325,8 +1295,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E0E4EE',
   },
   headerIconBtn: {
-    width: 44,
-    height: 44,
+    width: t.spacing.touchTarget,
+    height: t.spacing.touchTarget,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1334,6 +1304,7 @@ const styles = StyleSheet.create({
   sosButton: {
     minHeight: t.spacing.touchTarget,
     paddingHorizontal: t.spacing.lg,
+    paddingVertical: t.spacing.sm,
     borderRadius: t.radius.lg,
     backgroundColor: t.colors.error,
     flexDirection: 'row',
@@ -1440,9 +1411,10 @@ const styles = StyleSheet.create({
     backgroundColor: t.colors.primary,
   },
   tabText: {
-    fontSize: 13,
+    fontSize: t.typography.sizeSM,
     fontWeight: t.typography.weightBold,
     color: t.colors.text,
+    textAlign: 'center',
   },
   tabTextActive: {
     color: '#FFFFFF',
@@ -1546,9 +1518,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   inputMethodHint: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: 'rgba(255,255,255,0.9)',
+    fontSize: t.typography.sizeSM,
+    lineHeight: t.typography.sizeSM * t.typography.lineHeightBody,
+    color: '#FFFFFF',
     fontWeight: t.typography.weightMedium,
   },
 
@@ -1667,41 +1639,18 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   moneyPhotoList: {
-    gap: 18,
+    gap: 12,
     marginBottom: 18,
   },
   moneyPhotoRow: {
-    minHeight: 126,
-    borderRadius: 16,
-    borderWidth: 2,
+    minHeight: 82,
+    borderRadius: 14,
+    borderWidth: 1,
     borderColor: '#C8D0DE',
     backgroundColor: '#F9FAFC',
+    alignItems: 'flex-start',
     justifyContent: 'center',
     paddingHorizontal: 14,
-  },
-  moneyPhotoStage: {
-    width: 220,
-    height: 86,
-    borderRadius: 8,
-    backgroundColor: '#FBEFCC',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  moneyCoinStage: {
-    backgroundColor: '#1D4353',
-  },
-  moneyBillImage: {
-    width: 160,
-    height: 60,
-  },
-  moneyCoinImage: {
-    width: 138,
-    height: 74,
-  },
-  moneyFallbackText: {
-    color: '#17181A',
-    fontSize: 24,
-    fontWeight: '900',
   },
   coverageTotalRow: {
     flexDirection: 'row',
@@ -1755,30 +1704,6 @@ const styles = StyleSheet.create({
     color: t.colors.error,
     lineHeight: t.typography.sizeSM * t.typography.lineHeightBody,
   },
-  btnBypass: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: t.spacing.sm,
-    backgroundColor: '#E7E7E7',
-    borderWidth: 1,
-    borderColor: '#C8D0DE',
-    borderRadius: 14,
-    paddingVertical: 14,
-    minHeight: 72,
-  },
-  btnBypassCompact: {
-    minHeight: 62,
-    paddingHorizontal: 14,
-  },
-  btnBypassText: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#17181A',
-  },
-  btnBypassTextCompact: {
-    fontSize: 20,
-  },
   btnContinue: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1795,167 +1720,121 @@ const styles = StyleSheet.create({
   // Step D: successo / resto (layout unificato — sfondo verde)
   successFull: {
     flex: 1,
-    backgroundColor: '#257642',
+    backgroundColor: t.colors.success,
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 18,
-    paddingBottom: 32,
+  },
+  successFrame: {
+    flex: 1,
+    alignItems: 'center',
+    paddingBottom: 14,
+  },
+  successTopRow: {
+    alignSelf: 'stretch',
+  },
+  successContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 2,
+    paddingBottom: 6,
+  },
+  successContentTiny: {
+    paddingTop: 0,
+    paddingBottom: 2,
   },
   successIconCircle: {
-    width: 232,
-    height: 232,
-    borderRadius: 116,
     backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 4,
     borderColor: '#FFFFFF',
-    marginTop: 118,
-    marginBottom: 62,
-  },
-  successIconCircleCompact: {
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    marginTop: 64,
-    marginBottom: 34,
   },
   successIconInner: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 4,
     borderColor: '#FFFFFF',
   },
-  successIconInnerCompact: {
-    width: 92,
-    height: 92,
-    borderRadius: 46,
-  },
   successTitle: {
-    marginTop: 2,
-    fontSize: 34,
-    lineHeight: 38,
+    fontSize: 30,
+    lineHeight: 34,
     fontWeight: '900',
     color: '#FFFFFF',
     textAlign: 'center',
   },
   successTitleCompact: {
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 27,
+    lineHeight: 31,
+  },
+  successTitleTiny: {
+    fontSize: 24,
+    lineHeight: 28,
   },
   successSubtitle: {
-    fontSize: 23,
-    lineHeight: 30,
-    fontWeight: '500',
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '800',
     color: '#FFFFFF',
     textAlign: 'center',
-    marginBottom: 28,
   },
   successSubtitleCompact: {
-    fontSize: 18,
-    lineHeight: 24,
-    marginBottom: 18,
+    fontSize: 17,
+    lineHeight: 22,
+  },
+  successSubtitleTiny: {
+    fontSize: 16,
+    lineHeight: 20,
   },
   changeRestoCard: {
     width: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
-    paddingHorizontal: 24,
-    paddingTop: 30,
-    paddingBottom: 34,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 22,
     alignItems: 'center',
-    gap: 24,
+    gap: 12,
     shadowColor: '#11351F',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.14,
     shadowRadius: 12,
     elevation: 3,
   },
+  changeRestoCardShort: {
+    paddingTop: 14,
+    paddingBottom: 16,
+    gap: 8,
+  },
+  changeRestoCardTiny: {
+    paddingTop: 10,
+    paddingBottom: 12,
+    gap: 6,
+  },
   changeRestoLabel: {
-    fontSize: 31,
-    lineHeight: 36,
+    fontSize: 26,
+    lineHeight: 31,
     fontWeight: '800',
     color: '#414758',
     textAlign: 'center',
   },
   changeRestoLabelCompact: {
-    fontSize: 25,
-    lineHeight: 30,
+    fontSize: 22,
+    lineHeight: 27,
   },
   changeRestoAmount: {
-    fontSize: 60,
-    lineHeight: 68,
+    fontSize: 52,
+    lineHeight: 58,
     fontWeight: '900',
-    color: '#257642',
+    color: t.colors.success,
     textAlign: 'center',
   },
   changeRestoAmountCompact: {
-    fontSize: 48,
-    lineHeight: 54,
+    fontSize: 44,
+    lineHeight: 50,
   },
-
-  // Modal bypass
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: t.colors.background,
-    borderTopLeftRadius: t.radius.xl,
-    borderTopRightRadius: t.radius.xl,
-    borderWidth: 3,
-    borderBottomWidth: 0,
-    borderColor: t.colors.text,
-    padding: t.spacing.lg,
-    gap: t.spacing.md,
-  },
-  modalTitle: {
-    fontSize: t.typography.sizeLG,
-    fontWeight: t.typography.weightBold,
-    color: t.colors.text,
-    textAlign: 'center',
-  },
-  modalSubtitle: {
-    fontSize: t.typography.sizeSM,
-    fontWeight: t.typography.weightMedium,
-    color: t.colors.textSecondary,
-    textAlign: 'center',
-  },
-  modalBills: {
-    flexDirection: 'row',
-    gap: t.spacing.sm,
-    justifyContent: 'center',
-    flexWrap: 'wrap',
-  },
-  modalBill: {
-    minWidth: 88,
-    minHeight: t.spacing.touchTarget,
-    borderRadius: t.radius.md,
-    borderWidth: 3,
-    borderColor: '#5C2D00',
-    backgroundColor: '#8B4500',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: t.spacing.sm,
-  },
-  modalBillText: {
-    fontSize: t.typography.sizeMD,
-    fontWeight: t.typography.weightBold,
-    color: '#FFFFFF',
-  },
-  modalCancel: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: t.spacing.touchTarget,
-  },
-  modalCancelText: {
-    fontSize: t.typography.sizeMD,
-    fontWeight: t.typography.weightBold,
-    color: t.colors.error,
+  changeRestoAmountTiny: {
+    fontSize: 36,
+    lineHeight: 42,
   },
 
   // Pulsanti footer
@@ -1975,30 +1854,41 @@ const styles = StyleSheet.create({
   btnFinish: {
     width: '100%',
     backgroundColor: '#FFFFFF',
-    paddingVertical: 16,
+    paddingVertical: 12,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 86,
-    marginTop: 38,
+    minHeight: 68,
     flexDirection: 'row',
-    gap: 16,
+    gap: 12,
+  },
+  btnFinishShort: {
+    minHeight: 62,
+    paddingVertical: 10,
   },
   btnFinishCompact: {
-    minHeight: 72,
-    marginTop: 24,
-    paddingVertical: 14,
+    minHeight: 60,
+    paddingVertical: 10,
     gap: 10,
   },
+  btnFinishTiny: {
+    minHeight: 56,
+    paddingVertical: 8,
+  },
   btnFinishText: {
-    color: '#257642',
-    fontSize: 30,
-    lineHeight: 36,
+    color: t.colors.success,
+    fontSize: 24,
+    lineHeight: 30,
     fontWeight: '900',
+    flexShrink: 1,
   },
   btnFinishTextCompact: {
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 20,
+    lineHeight: 25,
+  },
+  btnFinishTextTiny: {
+    fontSize: 18,
+    lineHeight: 23,
   },
   btnDisabled: {
     backgroundColor: t.colors.textDisabled,
@@ -2008,9 +1898,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: t.typography.sizeMD,
     fontWeight: t.typography.weightBold,
-    letterSpacing: 0.8,
+    letterSpacing: 0,
   },
   btnPrimaryTextCompact: {
-    fontSize: 15,
+    fontSize: t.typography.sizeSM,
   },
 });

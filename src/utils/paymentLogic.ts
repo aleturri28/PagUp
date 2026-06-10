@@ -114,29 +114,17 @@ function calculateExactModePayment(inventory: MoneyItem[], total: number): Payme
 
 function calculateFastModePayment(inventory: MoneyItem[], total: number): PaymentResult {
   const target = roundPaymentTarget(total);
-  const selectedItems: MoneyItem[] = [];
-  let coveredAmount = 0;
+  const usable = (inventory || []).filter(isUsableItem);
 
-  const bills = (inventory || [])
-    .filter((item) => item.type === 'bill' && isUsableItem(item))
-    .sort((a, b) => b.value - a.value);
-  const coins = (inventory || [])
-    .filter((item) => item.type === 'coin' && isUsableItem(item))
-    .sort((a, b) => b.value - a.value);
-
-  for (const item of bills) {
-    if (round2(coveredAmount) >= target) break;
-    selectedItems.push(item);
-    coveredAmount = round2(coveredAmount + item.value);
+  // Pick the single smallest item that alone covers the total (immediately superior)
+  const covering = usable.filter((item) => item.value >= target);
+  if (covering.length > 0) {
+    const best = covering.reduce((min, item) => (item.value < min.value ? item : min));
+    return resultFromSelection([best], total);
   }
 
-  for (const item of coins) {
-    if (round2(coveredAmount) >= target) break;
-    selectedItems.push(item);
-    coveredAmount = round2(coveredAmount + item.value);
-  }
-
-  return resultFromSelection(selectedItems, total);
+  // No single item covers — fall back to smallest covering combination
+  return resultFromSelection(findSmallestCoveringCombination(usable, toCents(target)), total);
 }
 
 export function calculateStudentPayment(
