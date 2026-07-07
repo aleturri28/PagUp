@@ -7,7 +7,7 @@ export interface PaymentLogInput {
   studentId: string;
   amount: number;
   coveredAmount: number;
-  usedBypass: boolean;
+  usedFastMode: boolean;
   selectedItems: MoneyItem[];
 }
 
@@ -57,8 +57,8 @@ export async function recordPayment(input: PaymentLogInput): Promise<void> {
     getStudentName(input.studentId),
   ]);
 
-  const message = input.usedBypass
-    ? `${studentName} ha pagato ${formatEuro(input.amount)} usando "Ho altri soldi".`
+  const message = input.usedFastMode
+    ? `${studentName} ha pagato ${formatEuro(input.amount)} in modalità veloce.`
     : `${studentName} ha pagato ${formatEuro(input.amount)}.`;
 
   await Promise.all(
@@ -69,7 +69,7 @@ export async function recordPayment(input: PaymentLogInput): Promise<void> {
         kind: 'payment',
         amount: input.amount,
         covered_amount: input.coveredAmount,
-        used_bypass: input.usedBypass,
+        used_bypass: input.usedFastMode,
         message,
         metadata: {
           selectedItems: input.selectedItems,

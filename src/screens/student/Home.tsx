@@ -213,7 +213,7 @@ export default function StudentHome({ navigation }: Props) {
             </View>
             <Text style={styles.unpairedTitle}>Collega il tuo tutor per iniziare</Text>
             <Text style={styles.unpairedText}>
-              Finche il tutor non scansiona il tuo QR, l&apos;account studente resta in attesa e non mostra pagamenti o allenamento.
+              Finché il tutor non scansiona il tuo QR, l&apos;account studente resta in attesa e non mostra pagamenti o allenamento.
             </Text>
           </View>
 

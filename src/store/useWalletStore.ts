@@ -6,7 +6,6 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 import { MoneyItem } from '../api/database.types';
 import { supabase } from '../api/supabase';
 import {
-  calculateOptimalPayment,
   calculateStudentPayment,
   subtractItemsFromInventory,
   PaymentResult,
@@ -21,10 +20,6 @@ interface WalletState {
   // Contenuto del portafoglio dello studente.
   inventory: MoneyItem[];
 
-  // Flag "Ho altri soldi": se attivo, permette il pagamento
-  // anche con inventory vuoto o insufficiente.
-  isBypassActive: boolean;
-
   // Canale Realtime Supabase attivo (non persistito).
   _realtimeChannel: RealtimeChannel | null;
 }
@@ -33,22 +28,9 @@ interface WalletState {
 // AZIONI DELLO STORE
 // ============================================================
 interface WalletActions {
-  // Calcola la combinazione ottimale di items per il totale dato.
-  // Non modifica lo stato: è una query pura sullo store.
-  calculateOptimalPayment: (total: number) => PaymentResult;
-
-  // Esegue il pagamento: sottrae gli items usati dall'inventory.
-  // Se isBypassActive e l'inventory è insufficiente, logga e bypassa.
-  processPayment: (total: number) => PaymentResult;
-
-  // Versione reale: aggiorna wallet Supabase, registra log e notifica il tutor.
-  processRealPayment: (total: number, coveredOverride?: number, mode?: PaymentMode) => Promise<PaymentResult>;
-
-  // Attiva/disattiva il bypass "Ho altri soldi".
-  toggleBypass: () => void;
-
-  // Imposta direttamente l'inventory (usato dal tutor o dal sync).
-  setInventory: (items: MoneyItem[]) => void;
+  // Esegue il pagamento reale: sottrae gli items usati dall'inventory,
+  // aggiorna il wallet su Supabase, registra il log e notifica il tutor.
+  processRealPayment: (total: number, mode?: PaymentMode) => Promise<PaymentResult>;
 
   // Avvia la sottoscrizione Realtime per l'utente autenticato.
   // Chiama questa funzione dopo il login dello studente.
@@ -68,53 +50,15 @@ export const useWalletStore = create<WalletStore>()(
     (set, get) => ({
       // --- Stato iniziale ---
       inventory: [],
-      isBypassActive: false,
       _realtimeChannel: null,
 
       // --- Azioni ---
 
-      calculateOptimalPayment: (total) => {
-        return calculateOptimalPayment(get().inventory, total);
-      },
-
-      processPayment: (total) => {
-        const { inventory, isBypassActive } = get();
-        const result = calculateOptimalPayment(inventory, total);
+      processRealPayment: async (total, mode = 'exact') => {
+        const { inventory } = get();
+        const result = calculateStudentPayment(inventory, total, mode);
 
         if (result.isInsufficient) {
-          if (isBypassActive) {
-            // Il tutor ha abilitato il bypass: lo studente dichiara
-            // di avere i soldi fisicamente ma non nel wallet digitale.
-            console.log(
-              '[WalletStore] Bypass attivo: pagamento approvato con inventory insufficiente.',
-              { total, inventory },
-            );
-            // Feedback aptico leggero per distinguerlo dal pagamento normale.
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            return result;
-          }
-          // Inventory insufficiente e bypass non attivo: nessuna modifica.
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          return result;
-        }
-
-        // Pagamento riuscito: rimuovi gli items usati dall'inventory.
-        const newInventory = subtractItemsFromInventory(inventory, result.selectedItems);
-        set({ inventory: newInventory });
-
-        // Feedback aptico medio per confermare il pagamento.
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-        return result;
-      },
-
-      processRealPayment: async (total, coveredOverride, mode = 'exact') => {
-        const { inventory, isBypassActive } = get();
-        const result = calculateStudentPayment(inventory, total, mode);
-        const coveredAmount = coveredOverride ?? result.coveredAmount;
-        const usedBypass = coveredOverride !== undefined || (result.isInsufficient && isBypassActive);
-
-        if (result.isInsufficient && !isBypassActive) {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           return result;
         }
@@ -125,39 +69,20 @@ export const useWalletStore = create<WalletStore>()(
           throw error ?? new Error('Utente non autenticato.');
         }
 
-        let nextInventory = inventory;
-        if (!usedBypass) {
-          nextInventory = subtractItemsFromInventory(inventory, result.selectedItems);
-          set({ inventory: nextInventory });
-          await persistWallet(data.user.id, nextInventory);
-        }
+        const nextInventory = subtractItemsFromInventory(inventory, result.selectedItems);
+        set({ inventory: nextInventory });
+        await persistWallet(data.user.id, nextInventory);
 
         await recordPayment({
           studentId: data.user.id,
           amount: total,
-          coveredAmount,
-          usedBypass,
+          coveredAmount: result.coveredAmount,
+          usedFastMode: mode === 'fast',
           selectedItems: result.selectedItems,
         });
 
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        return {
-          ...result,
-          coveredAmount,
-          isInsufficient: false,
-          change: Math.max(0, Math.round((coveredAmount - total) * 100) / 100),
-        };
-      },
-
-      toggleBypass: () => {
-        const next = !get().isBypassActive;
-        set({ isBypassActive: next });
-        Haptics.selectionAsync();
-      },
-
-      setInventory: (items) => {
-        set({ inventory: items });
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        return result;
       },
 
       // ============================================================
@@ -223,7 +148,6 @@ export const useWalletStore = create<WalletStore>()(
       // Non persistere il canale Realtime (non serializzabile).
       partialize: (state) => ({
         inventory: state.inventory,
-        isBypassActive: state.isBypassActive,
       }),
     },
   ),

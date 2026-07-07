@@ -109,6 +109,7 @@ export default function Register({ navigation }: Props) {
             onChangeText={setEmail}
             autoCapitalize="none"
             keyboardType="email-address"
+            accessibilityLabel="Email"
             placeholder="email"
             style={styles.input}
             editable={!loading}
@@ -117,6 +118,7 @@ export default function Register({ navigation }: Props) {
             value={username}
             onChangeText={setUsername}
             autoCapitalize="none"
+            accessibilityLabel="Username"
             placeholder="username"
             style={styles.input}
             editable={!loading}
@@ -125,6 +127,7 @@ export default function Register({ navigation }: Props) {
             value={password}
             onChangeText={setPassword}
             secureTextEntry
+            accessibilityLabel="Password"
             placeholder="password"
             style={styles.input}
             editable={!loading}
@@ -133,6 +136,7 @@ export default function Register({ navigation }: Props) {
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             secureTextEntry
+            accessibilityLabel="Conferma password"
             placeholder="conferma password"
             style={styles.input}
             editable={!loading}
@@ -143,6 +147,9 @@ export default function Register({ navigation }: Props) {
             <TouchableOpacity
               style={[styles.roleOption, role === 'student' && styles.roleOptionActive]}
               onPress={() => setRole('student')}
+              accessibilityRole="button"
+              accessibilityLabel="Ruolo studente"
+              accessibilityState={{ selected: role === 'student' }}
             >
               <Text style={[styles.roleOptionText, role === 'student' && styles.roleOptionTextActive]}>
                 Studente
@@ -151,6 +158,9 @@ export default function Register({ navigation }: Props) {
             <TouchableOpacity
               style={[styles.roleOption, role === 'tutor' && styles.roleOptionActive]}
               onPress={() => setRole('tutor')}
+              accessibilityRole="button"
+              accessibilityLabel="Ruolo tutor"
+              accessibilityState={{ selected: role === 'tutor' }}
             >
               <Text style={[styles.roleOptionText, role === 'tutor' && styles.roleOptionTextActive]}>
                 Tutor

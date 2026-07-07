@@ -84,6 +84,7 @@ export default function Login({ navigation }: Props) {
                     onChangeText={setEmail}
                     autoCapitalize="none"
                     keyboardType="email-address"
+                    accessibilityLabel="Email"
                     placeholder="nome@email.it"
                     placeholderTextColor="#8B96AC"
                     style={styles.input}
@@ -100,6 +101,7 @@ export default function Login({ navigation }: Props) {
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry
+                    accessibilityLabel="Password"
                     placeholder="Inserisci la password"
                     placeholderTextColor="#8B96AC"
                     style={styles.input}

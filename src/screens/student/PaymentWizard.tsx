@@ -71,7 +71,7 @@ function Numpad({ onPress }: NumpadProps) {
           onPress={() => onPress(key)}
           accessible
           accessibilityLabel={key === '⌫' ? 'Cancella' : key}
-          accessibilityHint={key === '⌫' ? 'Rimuove l\'ultimo carattere inserito' : key === '.' ? 'Aggiunge il separatore decimale' : 'Aggiunge la cifra all\'importo'}
+          accessibilityHint={key === '⌫' ? 'Rimuove l\'ultimo carattere inserito' : key === ',' ? 'Aggiunge il separatore decimale' : 'Aggiunge la cifra all\'importo'}
           accessibilityRole="button"
           activeOpacity={0.7}
         >
@@ -873,7 +873,7 @@ function MoneyPhotoRow({ item }: { item: MoneyItem }) {
       accessible
       accessibilityLabel={`${item.type === 'bill' ? 'Banconota' : 'Moneta'} da ${formatEuro(item.value)}`}
     >
-      <MoneyChip item={item} size="small" />
+      <MoneyChip item={item} size="medium" />
     </View>
   );
 }
@@ -889,7 +889,7 @@ function StepInstructions({ total, onContinue, onBack, paymentMode, compact }: S
   const handleContinue = useCallback(async () => {
     setIsCompleting(true);
     try {
-      const payResult = await processRealPayment(total, undefined, paymentMode);
+      const payResult = await processRealPayment(total, paymentMode);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       onContinue(payResult.coveredAmount);
     } catch (error) {
@@ -983,8 +983,7 @@ function StepChange({ total, coveredAmount, onFinish, compact }: StepChangeProps
   const landscape = width > height;
   const successContentWidth = Math.min(width - (compact ? 32 : 48), 520);
   const iconSize = landscape ? 96 : veryShort ? 112 : short ? 132 : compact ? 144 : 158;
-  const iconInnerSize = Math.round(iconSize * 0.52);
-  const checkSize = Math.round(iconInnerSize * 0.84);
+  const iconInnerSize = Math.round(iconSize * 0.56);
   const iconMargin = landscape ? 4 : veryShort ? 6 : short ? 8 : 12;
   const finishIconSize = veryShort ? 22 : compact ? 24 : 26;
 
@@ -1003,6 +1002,22 @@ function StepChange({ total, coveredAmount, onFinish, compact }: StepChangeProps
         </View>
 
         <View style={[styles.successContent, veryShort && styles.successContentTiny]}>
+          <View
+            style={[
+              styles.successIconCircle,
+              {
+                width: iconSize,
+                height: iconSize,
+                borderRadius: iconSize / 2,
+                marginBottom: iconMargin,
+                backgroundColor: '#FFFFFF',
+                borderWidth: 0,
+              },
+            ]}
+          >
+            <CheckCircle size={iconInnerSize} color={t.colors.success} strokeWidth={2.4} />
+          </View>
+
           <Text style={[
             styles.successTitle,
             compact && styles.successTitleCompact,
@@ -1011,41 +1026,8 @@ function StepChange({ total, coveredAmount, onFinish, compact }: StepChangeProps
             Pagamento{'\n'}completato
           </Text>
 
-          <View
-            style={[
-              styles.successIconCircle,
-              {
-                width: iconSize,
-                height: iconSize,
-                borderRadius: iconSize / 2,
-                marginVertical: iconMargin,
-              },
-            ]}
-          >
-            <View
-              style={[
-                styles.successIconInner,
-                {
-                  width: iconInnerSize,
-                  height: iconInnerSize,
-                  borderRadius: iconInnerSize / 2,
-                },
-              ]}
-            >
-              <CheckCircle size={checkSize} color="#FFFFFF" strokeWidth={2.1} />
-            </View>
-          </View>
-
-          <Text style={[
-            styles.successSubtitle,
-            compact && styles.successSubtitleCompact,
-            veryShort && styles.successSubtitleTiny,
-          ]}>
-            Fatto.
-          </Text>
-
           <View style={[styles.changeRestoCard, short && styles.changeRestoCardShort, veryShort && styles.changeRestoCardTiny]}>
-            <Text style={[styles.changeRestoLabel, compact && styles.changeRestoLabelCompact]}>Il tuo resto:</Text>
+            <Text style={[styles.changeRestoLabel, compact && styles.changeRestoLabelCompact]}>Ti devono dare</Text>
             <Text
               style={[styles.changeRestoAmount, compact && styles.changeRestoAmountCompact, veryShort && styles.changeRestoAmountTiny]}
               numberOfLines={1}
@@ -1063,7 +1045,7 @@ function StepChange({ total, coveredAmount, onFinish, compact }: StepChangeProps
             accessibilityHint="Torna alla schermata iniziale per iniziare un nuovo pagamento"
             accessibilityRole="button"
           >
-            <Home size={finishIconSize} color={t.colors.success} />
+            <Home size={finishIconSize} color={t.colors.success} style={styles.btnFinishIcon} />
             <Text
               style={[styles.btnFinishText, compact && styles.btnFinishTextCompact, veryShort && styles.btnFinishTextTiny]}
               numberOfLines={1}
@@ -1302,9 +1284,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sosButton: {
-    minHeight: t.spacing.touchTarget,
-    paddingHorizontal: t.spacing.lg,
-    paddingVertical: t.spacing.sm,
+    minHeight: 48,
+    marginVertical: 4,
+    paddingHorizontal: t.spacing.md,
+    paddingVertical: 6,
     borderRadius: t.radius.lg,
     backgroundColor: t.colors.error,
     flexDirection: 'row',
@@ -1749,12 +1732,6 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     borderColor: '#FFFFFF',
   },
-  successIconInner: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 4,
-    borderColor: '#FFFFFF',
-  },
   successTitle: {
     fontSize: 30,
     lineHeight: 34,
@@ -1769,21 +1746,6 @@ const styles = StyleSheet.create({
   successTitleTiny: {
     fontSize: 24,
     lineHeight: 28,
-  },
-  successSubtitle: {
-    fontSize: 20,
-    lineHeight: 24,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    textAlign: 'center',
-  },
-  successSubtitleCompact: {
-    fontSize: 17,
-    lineHeight: 22,
-  },
-  successSubtitleTiny: {
-    fontSize: 16,
-    lineHeight: 20,
   },
   changeRestoCard: {
     width: '100%',
@@ -1875,12 +1837,17 @@ const styles = StyleSheet.create({
     minHeight: 56,
     paddingVertical: 8,
   },
+  btnFinishIcon: {
+    position: 'absolute',
+    left: 20,
+  },
   btnFinishText: {
     color: t.colors.success,
     fontSize: 24,
     lineHeight: 30,
     fontWeight: '900',
     flexShrink: 1,
+    textAlign: 'center',
   },
   btnFinishTextCompact: {
     fontSize: 20,

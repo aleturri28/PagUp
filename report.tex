@@ -1,0 +1,560 @@
+% !TEX program = pdflatex
+% ============================================================
+% Report esame Corso LPSMT — Progetto PagUp
+% Compilazione: pdflatex report.tex (eseguire due volte per i riferimenti)
+% ============================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[italian]{babel}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds, calc}
+\usepackage[hidelinks]{hyperref}
+
+% ---------- Palette (i colori del design system dell'app) ----------
+\definecolor{pagprimary}{HTML}{003A80}
+\definecolor{paggreen}{HTML}{145A32}
+\definecolor{paggrey}{HTML}{303030}
+\definecolor{paglight}{HTML}{EBEBEB}
+\definecolor{pagcode}{HTML}{F5F5F5}
+
+% ---------- Header / footer ----------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textsc{PagUp}}
+\fancyhead[R]{\small Report esame LPSMT}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ---------- Titoli ----------
+\titleformat{\section}{\Large\bfseries\color{pagprimary}}{\thesection.}{0.6em}{}
+\titleformat{\subsection}{\large\bfseries\color{paggrey}}{\thesubsection}{0.6em}{}
+
+% ---------- Stili TikZ ----------
+\tikzset{
+  node distance=1.1cm and 1.3cm,
+  box/.style={rectangle, rounded corners=3pt, draw=pagprimary, thick,
+    fill=pagprimary!6, align=center, minimum height=1cm, inner sep=6pt,
+    text width=2.8cm, font=\small},
+  store/.style={cylinder, shape border rotate=90, aspect=0.3, draw=paggreen,
+    thick, fill=paggreen!8, align=center, minimum height=1.4cm, text width=2.3cm, font=\small},
+  ext/.style={rectangle, rounded corners=3pt, draw=paggrey, thick,
+    fill=paglight, align=center, minimum height=0.9cm, text width=2.6cm, font=\small},
+  flow/.style={-{Stealth[length=2.5mm]}, thick, draw=paggrey},
+  bidir/.style={{Stealth[length=2.5mm]}-{Stealth[length=2.5mm]}, thick, draw=pagprimary},
+}
+
+% ============================================================
+\begin{document}
+
+% ---------- Frontespizio ----------
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\Huge\bfseries\color{pagprimary} PagUp\par}
+\vspace{0.4cm}
+{\large Autonomia e inclusione nel pagamento in contanti\par}
+\vspace{0.2cm}
+{\normalsize Wallet educativo e accessibile per persone con disabilit\`a cognitiva\par}
+\vspace{2cm}
+{\large\bfseries Report di progetto\par}
+{\large Corso LPSMT --- Laboratorio di Programmazione per Sistemi Mobili e Tablet\par}
+\vspace{2.5cm}
+{\Large Paolo Sarcletti \quad\textperiodcentered\quad Alessandro Turri\par}
+\vspace{2cm}
+\begin{tabular}{rl}
+\textbf{Tecnologie:} & Expo (React Native) + TypeScript, Supabase \\[4pt]
+\textbf{Piattaforme:} & Android, iOS \\[4pt]
+\textbf{Anno accademico:} & 2025/2026 \\
+\end{tabular}
+\vfill
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Introduzione}
+
+\subsection{Contesto dell'applicazione e NEED identificato}
+
+Pagare in contanti alla cassa \`e un gesto che la maggior parte delle persone compie senza
+pensarci. In realt\`a \`e un compito cognitivo composito: bisogna riconoscere i tagli di monete e
+banconote, comporre un importo a partire dai pezzi disponibili nel portafoglio, valutare se la
+cifra posseduta \`e sufficiente e infine controllare il resto. Per una persona con
+\textbf{disabilit\`a cognitiva} (disabilit\`a intellettiva, sindrome di Down, disturbi
+dell'apprendimento) ognuno di questi passaggi pu\`o trasformarsi in un ostacolo, e l'ostacolo si
+presenta nel momento peggiore: in pubblico, con la fila che attende. Il risultato tipico \`e che
+l'esperienza dell'acquisto viene evitata o delegata per intero al caregiver, con un costo che non
+\`e solo pratico ma anche psicologico, perch\'e la dipendenza per ogni acquisto erode il senso di
+autoefficacia della persona.
+
+Dal lato opposto della relazione c'\`e il tutor --- un genitore, un educatore, un operatore di
+centro diurno --- che vorrebbe accompagnare gradualmente la persona verso l'autonomia, ma che oggi
+pu\`o farlo solo stando fisicamente accanto a lei. Nel momento in cui la persona esce da sola, il
+tutor perde ogni visibilit\`a e ogni possibilit\`a di intervento.
+
+Il NEED che abbiamo identificato nasce dall'incrocio di questi due bisogni, finora mai coperti
+da un'unica soluzione:
+
+\begin{enumerate}[leftmargin=1.4cm]
+  \item \textbf{per lo studente}: uno strumento che guidi \emph{passo-passo} l'atto del pagamento
+  reale, riduca il carico cognitivo a una sola decisione per volta, dia un riscontro immediato e
+  multisensoriale (visivo ad alto contrasto, aptico, testuale semplificato) e permetta di
+  allenarsi senza rischi prima di affrontare la cassa vera;
+  \item \textbf{per il tutor}: la possibilit\`a di configurare il portafoglio digitale, calibrare
+  la difficolt\`a dell'esercizio, osservare in tempo reale come procede e ricevere subito una
+  richiesta di aiuto (SOS) georeferenziata quando la persona \`e in difficolt\`a fuori casa.
+\end{enumerate}
+
+In una frase: \emph{trasformare un momento di stress in un'azione guidata e sicura}, rendendo la
+persona il pi\`u autonoma possibile senza togliere al tutor la rete di protezione.
+
+\subsection{Obiettivi generali del progetto}
+
+PagUp \`e un'applicazione mobile cross-platform (Android/iOS) con due ruoli distinti --- studente
+e tutor --- costruiti sopra lo stesso backend. Gli obiettivi che ci siamo posti:
+
+\begin{itemize}[leftmargin=1.4cm]
+  \item \textbf{Accessibilit\`a come requisito di prima classe}, non come rifinitura: l'area
+  studente rispetta il livello \emph{AAA delle WCAG~2.1} (contrasto $\geq 7{:}1$ su ogni coppia
+  testo/sfondo), con touch target da 64\,dp (oltre il minimo di 48\,dp), tipografia mai sotto i
+  18\,px, etichette di accessibilit\`a e feedback aptico su ogni azione.
+  \item \textbf{Wizard di pagamento guidato} in quattro passi (importo $\rightarrow$ conferma
+  $\rightarrow$ quali pezzi consegnare $\rightarrow$ esito e resto), con un algoritmo che calcola
+  automaticamente la combinazione di monete e banconote da usare.
+  \item \textbf{Input multimodale} dell'importo: tastierino numerico, lettura OCR del totale dallo
+  scontrino tramite fotocamera, dettatura vocale in italiano. Chi non riesce a digitare pu\`o
+  fotografare o parlare.
+  \item \textbf{Modalit\`a allenamento}: stesso gesto del pagamento, cifre generate casualmente,
+  nessuna conseguenza sul saldo reale.
+  \item \textbf{Supervisione remota in tempo reale}: dashboard tutor con saldo, statistiche,
+  cronologia delle attivit\`a, editor del portafoglio e scelta della modalit\`a di pagamento,
+  sincronizzata via Supabase Realtime senza polling.
+  \item \textbf{Rete di protezione}: pulsante SOS sempre visibile durante il pagamento, con invio
+  di posizione GPS e notifica push al tutor; impostazioni dello studente protette da PIN del
+  tutor; isolamento dei dati garantito da Row Level Security nel database.
+\end{itemize}
+
+% ============================================================
+\section{Identificazione del segmento utente}
+
+\subsection{Utenti target}
+
+L'applicazione \`e progettata attorno a una relazione uno-a-molti tra tutor e studenti. I due
+profili condividono il backend ma usano interfacce, temi grafici e flussi completamente separati.
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.35}
+\begin{tabularx}{\textwidth}{@{}p{3.2cm}XX@{}}
+\toprule
+ & \textbf{Studente (utente primario)} & \textbf{Tutor (utente secondario)} \\
+\midrule
+\textbf{Chi \`e} & Persona con disabilit\`a cognitiva lieve o media in percorso verso
+l'autonomia; in prospettiva anche bambini in et\`a scolare che imparano a gestire il denaro
+& Genitore, educatore, operatore di centro diurno, insegnante di sostegno \\
+\textbf{Obiettivo} & Pagare e gestire il denaro in autonomia & Accompagnare, configurare,
+monitorare, intervenire \\
+\textbf{Interfaccia} & Tema \texttt{studentTheme}: contrasto AAA, touch target 64\,dp, testo
+$\geq$18\,px, una sola azione per schermata & Tema \texttt{tutorTheme}: dashboard informativa a
+quattro schede (home, statistiche, studenti, wallet) \\
+\textbf{Schermate} & Home, pagamento guidato, allenamento & Dashboard, impostazioni (associazione
+via QR, gestione PIN) \\
+\bottomrule
+\end{tabularx}
+\caption{I due segmenti utente di PagUp e le rispettive caratteristiche.}
+\end{table}
+
+\subsection{Perch\'e proprio loro: la lacuna da colmare}
+
+La scelta del segmento risponde a lacune precise del panorama attuale. Le app finanziarie
+generaliste (home banking, wallet digitali, gestori di spese) sono progettate per utenti
+neurotipici: presuppongono lettura fluente, astrazione numerica e tollerano interfacce dense; per
+il nostro profilo target risultano inaccessibili quando non ansiogene. Le app didattiche sul
+denaro, all'estremo opposto, trattano il denaro come concetto astratto --- quiz e conteggi a
+schermo --- ma non accompagnano la persona nel momento in cui il pagamento avviene davvero, e non
+prevedono alcuna figura di supervisione.
+
+Manca cio\`e una soluzione che tenga insieme tre cose: un'accessibilit\`a di livello verificabile
+(non ``caratteri grandi'' generici, ma contrasti e target misurati), un \emph{ponte con il denaro
+fisico} --- l'app che dice concretamente quali pezzi prendere dal portafoglio vero, mostrandone la
+fotografia --- e una supervisione remota del caregiver. \`E esattamente lo spazio che PagUp
+occupa. Si tratta di un'utenza fragile e sottoservita, per la quale il costo dell'errore
+(vergogna, frustrazione, perdita di denaro) \`e alto e ogni dettaglio di accessibilit\`a decide se
+l'app \`e usabile oppure no.
+
+% ============================================================
+\section{Stato dell'arte}
+
+\subsection{Applicazioni simili presenti negli store}
+
+Il panorama esistente si pu\`o suddividere in quattro famiglie, nessuna delle quali copre per
+intero il bisogno individuato.
+
+\begin{enumerate}[leftmargin=1.4cm]
+  \item \textbf{App di riconoscimento del denaro per disabilit\`a visiva} --- ad esempio
+  \emph{Cash Reader} o il canale valuta di \emph{Seeing AI} (Microsoft). Identificano una
+  banconota inquadrata con la fotocamera e la annunciano vocalmente. Sono tecnicamente mature, ma
+  nascono per persone cieche o ipovedenti: riconoscono \emph{un} pezzo, non aiutano a
+  \emph{comporre} un importo n\'e a decidere cosa consegnare alla cassa.
+  \item \textbf{App didattiche sul denaro} --- esercizi di conteggio di monete ed euro pensati
+  per la scuola primaria o per la didattica speciale. Insegnano il riconoscimento dei tagli
+  tramite quiz, ma l'esercizio resta scollegato dall'atto reale del pagamento, l'interazione \`e
+  spesso datata, la sincronizzazione cloud assente e la conformit\`a a standard di accessibilit\`a
+  verificabili pressoch\'e mai dichiarata.
+  \item \textbf{App di banking e wallet generaliste} --- home banking, Google Wallet, Satispay e
+  simili. Maturit\`a tecnica molto elevata, ma fuori target: interfacce dense, gergo finanziario,
+  denaro esclusivamente virtuale, nessuna attenzione all'accessibilit\`a cognitiva.
+  \item \textbf{App di assistenza e comunicazione per la disabilit\`a} --- strumenti di CAA
+  (comunicazione aumentativa alternativa), agende visive, app di sicurezza con pulsante di
+  emergenza. Coprono aspetti adiacenti (comunicazione, allerta al caregiver) ma non affrontano il
+  dominio della gestione del denaro.
+\end{enumerate}
+
+\subsection{Livello di maturazione}
+
+Le famiglie 1 e 3 presentano un livello di maturazione elevato, ma servono target diversi dal
+nostro (disabilit\`a visiva la prima, popolazione generale la seconda). La famiglia 2, che \`e la
+pi\`u vicina per intento educativo, \`e anche la pi\`u debole per qualit\`a: molte app risultano
+incomplete (coprono il riconoscimento ma non il pagamento), abbandonate o prive di qualunque
+componente di supervisione. La combinazione \emph{didattica del denaro + accompagnamento nel
+pagamento reale + supervisione del caregiver in tempo reale} \`e, per quanto abbiamo potuto
+verificare negli store, semplicemente assente.
+
+\subsection{Posizionamento di PagUp}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{@{}p{4.6cm}cccc@{}}
+\toprule
+\textbf{Caratteristica} & \textbf{Didattiche} & \textbf{Banking} & \textbf{CAA/SOS} & \textbf{PagUp} \\
+\midrule
+Accessibilit\`a WCAG AAA          & parziale & no & parziale & \textbf{s\`i} \\
+Wizard di pagamento guidato       & no       & no & no       & \textbf{s\`i} \\
+Ponte col denaro fisico reale     & no       & no & no       & \textbf{s\`i} \\
+Modalit\`a allenamento sicura     & s\`i     & no & no       & \textbf{s\`i} \\
+Supervisione tutor in tempo reale & no       & no & no       & \textbf{s\`i} \\
+SOS con geolocalizzazione         & no       & no & s\`i     & \textbf{s\`i} \\
+Input OCR + voce                  & no       & raro & no     & \textbf{s\`i} \\
+\bottomrule
+\end{tabularx}
+\caption{Posizionamento di PagUp rispetto alle famiglie di applicazioni esistenti.}
+\end{table}
+
+PagUp non compete con il banking sulla gestione finanziaria n\'e con le app didattiche sul puro
+esercizio: si propone come \emph{strumento ponte verso l'autonomia reale}, ed \`e l'unico prodotto
+della tabella a coprire l'intera filiera che va dall'allenamento protetto al pagamento vero
+supervisionato a distanza.
+
+% ============================================================
+\section{Architettura}
+
+\subsection{Visione d'insieme}
+
+PagUp adotta un'architettura \textbf{client--serverless} di tipo BaaS (\emph{Backend as a
+Service}). Il client \`e un'unica applicazione Expo / React Native scritta in TypeScript che, in
+base al ruolo dell'utente autenticato, instrada verso l'esperienza studente o quella tutor. Il
+backend \`e interamente delegato a \textbf{Supabase}, che sopra PostgreSQL fornisce
+autenticazione, persistenza, canali Realtime e sicurezza a livello di riga (Row Level Security).
+Non esiste un server applicativo intermedio: la logica di dominio vive nel client, isolata in
+funzioni pure e testata con Jest, mentre le regole di accesso ai dati vivono nel database sotto
+forma di policy dichiarative.
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{@{}p{3.6cm}p{4.4cm}X@{}}
+\toprule
+\textbf{Livello} & \textbf{Tecnologia} & \textbf{Ruolo} \\
+\midrule
+Frontend & Expo SDK 54, React Native 0.81, React 19, TypeScript & UI, navigazione, logica di dominio \\
+Stato locale & Zustand 5 + persistenza AsyncStorage & Portafoglio dello studente, sottoscrizione Realtime \\
+Navigazione & React Navigation (Stack) & Routing per ruolo, tasto indietro su ogni schermata non-home \\
+Backend & Supabase (PostgreSQL) & Auth, dati, Realtime, RLS \\
+Notifiche & Expo Notifications + Expo Push API & Avvisi push al tutor (pagamenti, SOS) \\
+Servizi nativi & ML Kit (OCR), Speech Recognition, Location, Camera, Haptics & Input multimodale, SOS, feedback tattile \\
+\bottomrule
+\end{tabularx}
+\caption{Stack tecnologico di PagUp.}
+\end{table}
+
+\subsection{Diagramma dell'architettura generale}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+  % --- Client layer ---
+  \node[box] (student) {App\\Studente};
+  \node[box, right=2.6cm of student] (tutor) {App\\Tutor};
+  \node[box, fill=paggreen!8, draw=paggreen, below=0.9cm of student] (zustand) {Zustand\\+ AsyncStorage};
+
+  % --- External native services (left) ---
+  \node[ext, left=1.8cm of student, yshift=1.2cm] (ocr) {ML Kit OCR};
+  \node[ext, left=1.8cm of student, yshift=-0.1cm] (voice) {Speech\\Recognition};
+  \node[ext, left=1.8cm of student, yshift=-1.4cm] (geo) {Location\\(SOS)};
+
+  % --- Supabase core ---
+  \node[store, below=2.6cm of $(student)!0.5!(tutor)$] (db) {Supabase\\PostgreSQL};
+  \node[ext, draw=paggreen, fill=paggreen!6, left=1.1cm of db] (auth) {Supabase\\Auth};
+  \node[ext, draw=paggreen, fill=paggreen!6, right=1.1cm of db] (rt) {Supabase\\Realtime};
+
+  % --- Push ---
+  \node[ext, below=1.0cm of tutor, xshift=2.2cm] (push) {Expo\\Push API};
+
+  % --- Edges ---
+  \draw[flow] (ocr) -- (student);
+  \draw[flow] (voice) -- (student);
+  \draw[flow] (geo) -- (student);
+  \draw[bidir] (student) -- (zustand);
+  \draw[bidir] (student) -- (db);
+  \draw[bidir] (tutor) -- (db);
+  \draw[bidir] (db) -- (auth);
+  \draw[bidir] (db) -- (rt);
+  \draw[flow] (rt) to[bend left=12] (student);
+  \draw[flow] (rt) to[bend right=12] (tutor);
+  \draw[flow] (student.south east) to[bend right=18] (push);
+  \draw[flow] (push) -- (tutor);
+
+  \begin{scope}[on background layer]
+    \node[draw=pagprimary, dashed, rounded corners, fit=(student)(tutor)(zustand), inner sep=10pt, label={[pagprimary]above:\small Client Expo / React Native}] {};
+    \node[draw=paggreen, dashed, rounded corners, fit=(db)(auth)(rt), inner sep=10pt, label={[paggreen]below:\small Backend Supabase (BaaS)}] {};
+  \end{scope}
+\end{tikzpicture}
+\caption{Architettura generale: un unico client a doppio ruolo, servizi nativi del dispositivo,
+backend Supabase e canale di notifiche push.}
+\end{figure}
+
+L'associazione tra un tutor e uno studente avviene di persona e senza scambio di credenziali: lo
+studente mostra un QR code generato dall'app (contenente il proprio identificativo), il tutor lo
+scansiona dalla schermata impostazioni e la riga corrispondente viene creata nella tabella ponte.
+Da quel momento le policy RLS aprono al tutor la visibilit\`a sui dati di quello studente, e
+soltanto su quelli.
+
+\subsection{Modello dati e sicurezza (Row Level Security)}
+
+Il database \`e composto da cinque tabelle. La sicurezza non \`e affidata al client ma
+\emph{dichiarata nel database}: ogni utente autenticato pu\`o leggere e scrivere solo le righe che
+le policy gli concedono, in funzione di \texttt{auth.uid()} e della tabella ponte
+\texttt{tutor\_students}.
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{@{}p{3.0cm}X@{}}
+\toprule
+\textbf{Tabella} & \textbf{Contenuto e regole principali} \\
+\midrule
+\texttt{profiles} & Estende \texttt{auth.users}: ruolo, username, nome completo, \texttt{tutor\_pin}. Creata da trigger al signup. Lo studente legge i profili dei propri tutor; il tutor quelli dei propri studenti. \\
+\texttt{wallets} & Un portafoglio per studente; campo \texttt{items} JSONB con l'array di \texttt{MoneyItem} (\texttt{id}, \texttt{value}, \texttt{type}, \texttt{imageUri}). Lo studente aggiorna il proprio; il tutor legge e scrive quelli dei propri studenti. \\
+\texttt{tutor\_students} & Tabella ponte della relazione tutor--studente; contiene la modalit\`a di pagamento assegnata (\texttt{payment\_mode}: \texttt{exact}/\texttt{fast}). Popolata tramite la scansione del QR. \\
+\texttt{activity\_logs} & Cronologia eventi: \texttt{payment}, \texttt{sos}, \texttt{wallet\_adjustment}. Per i pagamenti registra importo richiesto, importo consegnato e modalit\`a usata; per gli SOS la schermata di provenienza, l'importo eventualmente inserito e la posizione GPS (in \texttt{metadata} JSONB). \\
+\texttt{push\_tokens} & Token Expo Push per utente e piattaforma, usati per recapitare gli avvisi al tutor. \\
+\bottomrule
+\end{tabularx}
+\caption{Schema dati e regole di accesso (RLS) di PagUp.}
+\end{table}
+
+
+\subsection{Sincronizzazione in tempo reale (broadcast)}
+
+Il punto qualificante dell'architettura \`e la sincronizzazione bidirezionale \emph{senza polling}
+tramite Supabase Realtime, che ritrasmette ai client sottoscritti gli eventi
+\texttt{postgres\_changes} del database. Quando il tutor ricarica il portafoglio di uno studente,
+la riga \texttt{wallets} cambia, l'evento \texttt{UPDATE} raggiunge il canale a cui il dispositivo
+dello studente \`e sottoscritto, l'inventario locale si aggiorna e parte un feedback aptico che
+avvisa la persona senza bisogno di leggere nulla. Simmetricamente la dashboard del tutor \`e
+sottoscritta agli eventi su \texttt{wallets} e \texttt{activity\_logs}: un pagamento o un SOS
+compaiono sullo schermo del tutor nel momento in cui avvengono. Lo stesso meccanismo sblocca in
+automatico la home dello studente nell'istante in cui il tutor ne scansiona il QR.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.2cm and 2.0cm]
+  \node[box] (tutorapp) {Tutor\\ricarica wallet};
+  \node[store, right=of tutorapp] (db) {Supabase\\\texttt{wallets}};
+  \node[box, right=of db] (studentapp) {App Studente\\(canale \texttt{wallet:uid})};
+  \node[box, below=1.0cm of studentapp] (zs) {Zustand:\\inventario aggiornato};
+  \node[ext, below=1.0cm of zs] (hap) {Feedback aptico\\Success};
+
+  \draw[flow] (tutorapp) -- node[above,font=\scriptsize]{UPDATE} (db);
+  \draw[flow] (db) -- node[above,font=\scriptsize]{postgres\_changes} (studentapp);
+  \draw[flow] (studentapp) -- (zs);
+  \draw[flow] (zs) -- (hap);
+\end{tikzpicture}
+\caption{Flusso di broadcast Realtime: la modifica del tutor si propaga al dispositivo dello
+studente senza polling.}
+\end{figure}
+
+
+\subsection{Logica di dominio: l'algoritmo di pagamento}
+
+Il cuore funzionale \`e il calcolo di \emph{quali pezzi} consegnare per coprire un importo. Tutti
+i conti avvengono in \textbf{centesimi interi}, per evitare gli errori di arrotondamento del
+floating point, e l'importo obiettivo viene arrotondato per eccesso al multiplo di 10 centesimi:
+i tagli da 1, 2 e 5 centesimi sono esclusi sia dall'algoritmo sia dall'editor del tutor, perch\'e
+maneggiarli aggiunge complessit\`a senza valore didattico. Le modalit\`a sono due, e le sceglie il
+tutor per ciascuno studente:
+
+\begin{itemize}[leftmargin=1.4cm]
+  \item \textbf{Precisa (exact)}: cerca prima una combinazione \emph{esatta} dell'importo
+  (variante di subset-sum con memoizzazione delle somme raggiungibili in centesimi); se non
+  esiste, ripiega sulla pi\`u piccola combinazione che copre l'importo, minimizzando il resto.
+  \item \textbf{Veloce (fast)}: privilegia la semplicit\`a cognitiva scegliendo il \emph{singolo}
+  taglio pi\`u piccolo che da solo copre l'importo (per pagare 3{,}67~euro l'app propone la
+  banconota da 5~euro). \`E il gradino iniziale del percorso: prima si impara ``dai una
+  banconota abbastanza grande e aspetta il resto'', poi si passa alla composizione precisa.
+\end{itemize}
+
+
+La logica di dominio \`e isolata in funzioni pure (\texttt{src/utils/paymentLogic.ts},
+\texttt{smartExtract.ts}) e coperta da test unitari Jest (combinazione esatta, fallback, modalit\`a
+veloce, esclusione delle monete piccole, casi di insufficienza), secondo la regola di progetto
+``hooks e utility (logica) separati dai componenti (UI)''.
+
+\subsection{Flusso del wizard di pagamento}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.8cm and 1.5cm]
+  \node[box] (a) {1. Importo\\(tastiera/OCR/voce)};
+  \node[box, right=of a] (b) {2. Conferma\\importo};
+  \node[box, right=of b] (c) {3. Quali pezzi\\consegnare};
+  \node[box, right=of c] (d) {4. Esito\\+ resto};
+  \node[ext, below=1.0cm of b, xshift=1.5cm] (rec) {recordPayment\\$\rightarrow$ log + push};
+  \node[ext, below=1.0cm of a] (sos) {SOS\\(posizione + push)};
+
+  \draw[flow] (a) -- (b);
+  \draw[flow] (b) -- (c);
+  \draw[flow] (c) -- (d);
+  \draw[flow] (c) -- (rec);
+  \draw[flow] (a.south) -- (sos);
+\end{tikzpicture}
+\caption{Macchina a stati del PaymentWizard: ogni passo \`e una schermata a s\'e, con pulsante SOS
+sempre disponibile e registrazione dell'evento alla conferma del pagamento.}
+\end{figure}
+
+Ogni passo occupa l'intero schermo e chiede una sola decisione; si avanza e si torna indietro con
+animazioni direzionali coerenti (avanti = da destra, indietro = da sinistra) che aiutano a
+mantenere l'orientamento nel flusso. Nel terzo passo l'app mostra le \emph{fotografie} dei pezzi
+da prendere dal portafoglio reale. Alla conferma, \texttt{processRealPayment} sottrae i pezzi
+dall'inventario, persiste il wallet su Supabase, registra un \texttt{activity\_log} per ciascun
+tutor associato --- con importo richiesto, importo consegnato e modalit\`a usata --- e invia la
+notifica push. La schermata finale, a sfondo verde pieno, comunica l'esito e il resto atteso con
+un linguaggio ridotto all'essenziale.
+
+\subsection{L'accessibilit\`a come vincolo architetturale}
+
+L'accessibilit\`a non \`e uno strato cosmetico ma una scelta d'architettura: l'app definisce due
+\emph{design system} distinti come moduli TypeScript tipizzati (\texttt{src/theme/student.ts} e
+\texttt{tutor.ts}), e nessuna schermata usa colori o dimensioni fuori dai token del proprio tema.
+Il tema studente dichiara nel codice, accanto a ogni colore, il rapporto di contrasto verificato
+con la formula di luminanza relativa delle WCAG (dal 7{,}0:1 minimo del testo disabilitato al 21:1
+del nero su bianco); fissa il touch target a 64\,dp con distanza minima di 16\,dp tra bersagli
+adiacenti, e il corpo del testo a 18\,px con interlinea 1{,}6. Ogni elemento interattivo espone
+\texttt{accessibilityLabel} e \texttt{accessibilityHint} in italiano semplice, e ogni azione
+produce un feedback aptico differenziato (selezione, conferma, successo, avviso, errore), cos\`i
+che l'esito di un gesto sia percepibile anche senza leggere. Il tema tutor, rivolto a un utente
+neurotipico, adotta il livello AA e una densit\`a informativa maggiore: la separazione dei due
+temi permette di ottimizzare ciascuna esperienza senza compromessi reciproci.
+
+% ============================================================
+\section{Analisi critica dei possibili limiti}
+
+Pur coprendo il bisogno individuato, l'applicazione ha limiti noti. Li analizziamo nel dettaglio
+insieme alle direzioni di miglioramento, distinguendo ci\`o che \`e una scelta di scope da ci\`o
+che \`e un debito tecnico.
+
+\subsection{Limiti funzionali e di dominio}
+\begin{itemize}[leftmargin=1.4cm]
+  \item \textbf{Il resto \`e solo indicativo.} L'app calcola quanto resto attendersi ma non pu\`o
+  verificare che il cassiere lo restituisca correttamente: l'anello finale dell'interazione reale
+  resta fuori dal controllo del software. \emph{Estensione:} un passo opzionale di verifica del
+  resto, in cui la persona compone i pezzi ricevuti e l'app conferma che il conto torna.
+  \item \textbf{Allenamento non adattivo.} Le cifre della modalit\`a allenamento sono generate
+  casualmente da un insieme di tagli semplici, senza memoria dei successi e degli errori della
+  persona. \emph{Estensione:} difficolt\`a progressiva guidata dallo storico, con obiettivi
+  assegnabili dal tutor.
+  \item \textbf{Solo valuta Euro e lingua italiana.} Tagli, fotografie e parser vocale sono
+  cablati sull'Euro e sull'italiano (\texttt{EURO\_DENOMINATIONS}, \texttt{moneyImages.ts},
+  numerali in \texttt{useVoiceInput}). \emph{Estensione:} astrazione della valuta e
+  internazionalizzazione dei testi.
+\end{itemize}
+
+\subsection{Limiti tecnici e di piattaforma}
+\begin{itemize}[leftmargin=1.4cm]
+  \item \textbf{Notifiche push limitate ad Android.} \texttt{registerForPushNotifications}
+  restituisce \texttt{null} su iOS: un tutor con iPhone non riceve gli avvisi, incluso l'SOS
+  (l'evento resta comunque visibile in dashboard via Realtime). \emph{Estensione:} configurazione
+  APNs e build di distribuzione con EAS.
+  \item \textbf{OCR e voce richiedono la build nativa.} ML Kit e Speech Recognition non esistono
+  in Expo Go: i moduli sono caricati con \texttt{require} difensivo e, in loro assenza, l'app
+  ripiega sul solo tastierino. \emph{Estensione:} distribuzione esclusiva via dev-client o store.
+  \item \textbf{Il pagamento reale richiede connettivit\`a.} Il portafoglio \`e persistito
+  localmente (AsyncStorage) e consultabile offline, ma la conferma di un pagamento scrive su
+  Supabase: senza rete l'operazione fallisce con un avviso. \emph{Estensione:} coda locale di
+  eventi con riconciliazione al ritorno della connessione.
+  \item \textbf{Costo computazionale dell'algoritmo.} La ricerca delle somme raggiungibili \`e
+  pseudo-polinomiale nel numero di pezzi e nell'importo in centesimi; con inventari molto grandi
+  potrebbe degradare. Nella pratica l'inventario di un esercizio \`e piccolo; un limite esplicito
+  di cardinalit\`a metterebbe il vincolo nero su bianco.
+  \item \textbf{Scalabilit\`a del Realtime.} La dashboard del tutor si sottoscrive agli eventi
+  sulle tabelle \texttt{wallets} e \texttt{activity\_logs} filtrando lato client, e i log letti
+  sono limitati alle ultime 300 righe. Con molti utenti conviene spostare il filtro lato server e
+  paginare.
+\end{itemize}
+
+\subsection{Limiti di sicurezza}
+\begin{itemize}[leftmargin=1.4cm]
+  \item \textbf{PIN del tutor in chiaro.} Il campo \texttt{tutor\_pin} \`e memorizzato come testo
+  nel profilo: \`e una barriera contro l'apertura accidentale delle impostazioni da parte dello
+  studente, non un meccanismo di sicurezza forte. \emph{Estensione:} hashing del PIN o biometria
+  con \texttt{expo-local-authentication}, gi\`a tra le dipendenze del progetto.
+  \item \textbf{Invio push dal client.} Lo studente legge i token dei tutor associati e chiama
+  direttamente l'Expo Push API: funzionale ma esposto ad abusi. \emph{Estensione:} spostare
+  l'invio in una Edge Function Supabase autorizzata.
+  \item \textbf{QR di associazione senza scadenza.} Il codice mostrato dallo studente \`e statico
+  e l'associazione non richiede conferma reciproca. \emph{Estensione:} codici a tempo e doppio
+  consenso.
+\end{itemize}
+
+\subsection{Limiti di accessibilit\`a residui}
+\begin{itemize}[leftmargin=1.4cm]
+  \item L'app \`e costruita per la disabilit\`a cognitiva (e, di riflesso, serve bene anche
+  l'ipovisione grazie a contrasti e dimensioni), ma non affronta esplicitamente le
+  \textbf{disabilit\`a motorie gravi} (switch access, scansione) n\'e \`e stata validata in modo
+  sistematico con gli screen reader di sistema. \emph{Estensione:} campagna di test con
+  TalkBack e VoiceOver e supporto a input alternativi.
+  \item Manca una \textbf{lettura vocale in uscita} (text-to-speech) delle istruzioni: oggi
+  l'output \`e visivo e aptico ma non parlato, mentre per utenti con difficolt\`a di lettura la
+  voce sarebbe il canale pi\`u diretto.
+  \item Soprattutto, manca una \textbf{validazione sul campo con utenti reali}: le scelte di
+  accessibilit\`a rispettano gli standard, ma solo una sperimentazione con persone del target e i
+  loro educatori pu\`o confermare che il carico cognitivo percepito sia davvero quello progettato.
+\end{itemize}
+
+\subsection{Sintesi}
+
+La maggior parte dei limiti elencati discende da scelte di scope coerenti con un progetto
+didattico --- valuta unica, lingua unica, push solo Android, sicurezza del PIN proporzionata alla
+minaccia reale --- pi\`u che da difetti d'impianto. L'architettura scelta (logica in funzioni pure
+testate, autorizzazioni dichiarate nel database con RLS, sincronizzazione a eventi) fa s\`i che le
+estensioni descritte --- verifica del resto, allenamento adattivo, push iOS, coda offline, Edge
+Function, internazionalizzazione --- si possano innestare in modo incrementale, senza rimettere
+mano alle fondamenta.
+
+\end{document}

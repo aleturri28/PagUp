@@ -57,7 +57,6 @@ interface StudentState {
 interface DailyBar {
   label: string;
   total: number;
-  clean: number;
   sos: number;
 }
 
@@ -75,17 +74,22 @@ type SosLocation = { latitude: number; longitude: number; accuracy?: number | nu
 const DAY_LABELS_IT = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
 const EDITOR_DENOMS = EURO_DENOMINATIONS.filter((value) => value >= 0.1);
 
+function localDayKey(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
 function getDailyPayments(logs: ActivityRow[]): DailyBar[] {
   return Array.from({ length: 7 }, (_, i) => {
     const date = new Date();
     date.setDate(date.getDate() - (6 - i));
-    const dayStr = date.toISOString().split('T')[0] ?? '';
-    const dayPayments = logs.filter((l) => l.kind === 'payment' && l.created_at.startsWith(dayStr));
+    const dayStr = localDayKey(date);
+    const dayPayments = logs.filter((l) => l.kind === 'payment' && localDayKey(new Date(l.created_at)) === dayStr);
     return {
       label: DAY_LABELS_IT[date.getDay()] ?? '—',
       total: dayPayments.length,
-      clean: dayPayments.filter((l) => !l.used_bypass).length,
-      sos: logs.filter((l) => l.kind === 'sos' && l.created_at.startsWith(dayStr)).length,
+      sos: logs.filter((l) => l.kind === 'sos' && localDayKey(new Date(l.created_at)) === dayStr).length,
     };
   });
 }
@@ -227,7 +231,7 @@ function sosLocation(metadata: Json): SosLocation | null {
 function openMaps(location: SosLocation) {
   const url = `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`;
   Linking.openURL(url).catch(() => {
-    Alert.alert('Mappa non aperta', 'La posizione e salvata, ma non riesco ad aprire la mappa.');
+    Alert.alert('Mappa non aperta', 'La posizione è salvata, ma non riesco ad aprire la mappa.');
   });
 }
 
@@ -497,9 +501,9 @@ export default function TutorDashboard({ navigation }: Props) {
 
     if (error) {
       Alert.alert(
-        'Modalita non aggiornata',
+        'Modalità non aggiornata',
         error.message.includes('payment_mode')
-          ? 'La migration payment_mode non e attiva su questo database.'
+          ? 'La migration payment_mode non è attiva su questo database.'
           : error.message,
       );
       loadDashboard().catch(() => {});
@@ -631,7 +635,7 @@ export default function TutorDashboard({ navigation }: Props) {
               <Text style={styles.heroEyebrow}>Studente selezionato</Text>
               <Text style={[styles.heroTitle, isCompact && styles.heroTitleCompact]}>{selectedStudent.profile.username}</Text>
               <View style={styles.statusPill}>
-                <Text style={styles.statusPillText}>{selectedStudent.paymentMode === 'fast' ? 'Modalita veloce' : 'Modalita precisa'}</Text>
+                <Text style={styles.statusPillText}>{selectedStudent.paymentMode === 'fast' ? 'Modalità veloce' : 'Modalità precisa'}</Text>
               </View>
             </View>
           </View>
@@ -650,7 +654,7 @@ export default function TutorDashboard({ navigation }: Props) {
           </View>
           <View style={styles.summaryList}>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Ultima attivita</Text>
+              <Text style={styles.summaryLabel}>Ultima attività</Text>
               <Text style={styles.summaryValue}>{latestLog ? logKindLabel(latestLog) : 'Nessuna'}</Text>
             </View>
             <View style={styles.summaryRow}>
@@ -706,7 +710,7 @@ export default function TutorDashboard({ navigation }: Props) {
 
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Attivita ultimi 7 giorni</Text>
+            <Text style={styles.sectionTitle}>Attività ultimi 7 giorni</Text>
             <Text style={styles.sectionMeta}>{recentLogs.length} eventi letti</Text>
           </View>
           <WeeklyBarChart bars={weeklyBars} />
@@ -738,7 +742,7 @@ export default function TutorDashboard({ navigation }: Props) {
               </Text>
             </View>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Modalita corrente</Text>
+              <Text style={styles.summaryLabel}>Modalità corrente</Text>
               <Text style={styles.summaryValue}>{selectedStudent.paymentMode === 'fast' ? 'Veloce' : 'Precisa'}</Text>
             </View>
           </View>
@@ -788,7 +792,7 @@ export default function TutorDashboard({ navigation }: Props) {
 
                 {expanded ? (
                   <View style={styles.studentCardBody}>
-                    <Text style={styles.sliderLabel}>Modalita studente</Text>
+                    <Text style={styles.sliderLabel}>Modalità studente</Text>
                     <View style={styles.modeRail}>
                       <TouchableOpacity
                         style={[styles.modeChip, student.paymentMode === 'exact' && styles.modeChipActive]}
@@ -863,8 +867,8 @@ export default function TutorDashboard({ navigation }: Props) {
                   <Text style={styles.summaryValue}>{log.covered_amount != null ? formatEuro(log.covered_amount) : '—'}</Text>
                 </View>
                 <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Modalita</Text>
-                  <Text style={styles.summaryValue}>{log.used_bypass ? 'Veloce' : 'Normale'}</Text>
+                  <Text style={styles.summaryLabel}>Modalità</Text>
+                  <Text style={styles.summaryValue}>{log.used_bypass ? 'Veloce' : 'Precisa'}</Text>
                 </View>
               </View>
             ) : null}
@@ -938,7 +942,7 @@ export default function TutorDashboard({ navigation }: Props) {
             </Text>
           </TouchableOpacity>
           {walletBreakdown.length === 0 ? (
-            <Text style={styles.emptyInline}>Il wallet e vuoto.</Text>
+            <Text style={styles.emptyInline}>Il wallet è vuoto.</Text>
           ) : (
             <View style={styles.walletPieces}>
               {walletBreakdown.map((item) => (

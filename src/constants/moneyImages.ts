@@ -25,3 +25,9 @@ export const MONEY_IMAGE_BY_VALUE: Record<number, string> = Object.fromEntries(
 export function getMoneyImageUri(value: number): string {
   return MONEY_IMAGE_BY_VALUE[value] ?? '';
 }
+
+// Source locale (require) per il taglio: a differenza dell'URI assoluto,
+// si risolve sempre, anche per items creati su un altro dispositivo.
+export function getMoneyImageSource(value: number): number | null {
+  return (localMoneyImageByValue as Record<number, number>)[value] ?? null;
+}

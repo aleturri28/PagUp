@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { MoneyItem } from '../../api/database.types';
 import { formatEuro } from '../../utils/paymentLogic';
-import { getMoneyImageUri } from '../../constants/moneyImages';
+import { getMoneyImageSource } from '../../constants/moneyImages';
 
 // Colori ad altissimo contrasto (≥7:1 su sfondo bianco — WCAG AAA).
 // Ogni taglio ha un colore unico per distinguibilità cognitiva immediata.
@@ -50,8 +50,12 @@ export function MoneyChip({ item, size = 'medium' }: MoneyChipProps) {
   const isBill = item.type === 'bill';
   const chipStyle = SIZE_MAP[size];
   const a11yLabel = `${isBill ? 'Banconota' : 'Moneta'} da ${palette.name || formatEuro(item.value)}`;
-  const uri = item.imageUri || getMoneyImageUri(item.value);
-  const hasPhoto = !!uri;
+  // L'imageUri salvato negli items può provenire da un altro dispositivo
+  // (es. wallet ricaricato dal tutor) e non essere risolvibile qui:
+  // preferisci sempre l'asset locale corrispondente al valore.
+  const localSource = getMoneyImageSource(item.value);
+  const source = localSource ?? (item.imageUri ? { uri: item.imageUri } : null);
+  const hasPhoto = source !== null;
 
   return (
     <View
@@ -65,9 +69,9 @@ export function MoneyChip({ item, size = 'medium' }: MoneyChipProps) {
           : { backgroundColor: palette.bg, borderColor: palette.border },
       ]}
     >
-      {uri ? (
+      {source ? (
         <Image
-          source={{ uri }}
+          source={source}
           style={isBill ? chipStyle.photoBill : chipStyle.photoCoin}
           resizeMode="contain"
           accessible={false}

@@ -57,7 +57,7 @@ function hintFor(target: number, selectedTotal: number): string {
   const diff = round2(target - selectedTotal);
   if (diff === 0) return 'Perfetto: hai dato i soldi giusti.';
   if (diff > 0) return `Mancano ${formatEuro(diff)}. Aggiungi un taglio adatto.`;
-  return `Hai dato ${formatEuro(Math.abs(diff))} in piu. Togli qualcosa.`;
+  return `Hai dato ${formatEuro(Math.abs(diff))} in più. Togli qualcosa.`;
 }
 
 export default function Training({ navigation }: Props) {
@@ -207,7 +207,7 @@ export default function Training({ navigation }: Props) {
               exact ? styles.metricCardPositive : remaining < 0 ? styles.metricCardAlert : null,
             ]}
           >
-            <Text style={styles.metricLabel}>{exact ? 'Esatto' : remaining > 0 ? 'Manca' : 'In piu'}</Text>
+            <Text style={styles.metricLabel}>{exact ? 'Esatto' : remaining > 0 ? 'Manca' : 'In più'}</Text>
             <Text style={styles.metricValue}>{formatEuro(Math.abs(remaining))}</Text>
             <Text style={styles.metricSub}>
               {exact ? 'Nessun resto necessario' : remaining > 0 ? 'Devi aggiungere ancora' : 'Devi togliere qualcosa'}

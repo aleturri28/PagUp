@@ -9,7 +9,6 @@ import TutorSettings from '../screens/tutor/Settings';
 import StudentHome from '../screens/student/Home';
 import PaymentWizard from '../screens/student/PaymentWizard';
 import Training from '../screens/student/Training';
-import WalletTest from '../screens/student/WalletTest';
 import TutorDashboard from '../screens/tutor/Dashboard';
 import { RootStackParamList } from './types';
 import { getCurrentSession, getProfile, routeForRole } from '../api/auth';
@@ -76,7 +75,6 @@ export default function AppNavigator() {
         <Stack.Screen name="StudentHome" component={StudentHome} />
         <Stack.Screen name="PaymentWizard" component={PaymentWizard} />
         <Stack.Screen name="Training" component={Training} />
-        <Stack.Screen name="WalletTest" component={WalletTest} />
         <Stack.Screen name="TutorDashboard" component={TutorDashboard} />
       </Stack.Navigator>
     </NavigationContainer>
