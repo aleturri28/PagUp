@@ -1,0 +1,42 @@
+diff --git a/node_modules/react-native-gesture-handler/android/build.gradle b/node_modules/react-native-gesture-handler/android/build.gradle
+index 6348d17..f680184 100644
+--- a/node_modules/react-native-gesture-handler/android/build.gradle
++++ b/node_modules/react-native-gesture-handler/android/build.gradle
+@@ -94,19 +94,7 @@ def shouldUseCommonInterfaceFromReanimated() {
+ }
+ 
+ def shouldUseCommonInterfaceFromRNSVG() {
+-    // common interface compatible with react-native-svg >= 15.11.2
+-    def rnsvg = rootProject.subprojects.find { it.name == 'react-native-svg' }
+-
+-    if (rnsvg == null) {
+-        return false
+-    }
+-
+-    def (major, minor, patch) = getExternalLibVersion(rnsvg)
+-
+-
+-    return (major == 15 && minor == 11 && patch >= 2) ||
+-            (major == 15 && minor > 11) ||
+-            major > 15
++    return false
+ }
+ 
+ def reactNativeArchitectures() {
+@@ -236,14 +224,14 @@ dependencies {
+ 
+     if (shouldUseCommonInterfaceFromReanimated()) {
+         // Include Reanimated as dependency to load the common interface
+-        implementation(rootProject.subprojects.find { it.name == 'react-native-reanimated' }) {
++        implementation(project(':react-native-reanimated')) {
+             // resolves "Duplicate class com.facebook.jni.CppException"
+             exclude group: 'com.facebook.fbjni'
+         }
+     }
+ 
+     if (shouldUseCommonInterfaceFromRNSVG()) {
+-        implementation rootProject.subprojects.find { it.name == 'react-native-svg' }
++        implementation project(':react-native-svg')
+     }
+ 
+     implementation 'androidx.appcompat:appcompat:1.7.0'
